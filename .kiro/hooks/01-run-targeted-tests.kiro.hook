@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "name": "Run Targeted Tests",
+  "description": "Runs only the most relevant pytest tests during active development",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["src/**/*.py", "tests/**/*.py"]
+  },
+  "then": {
+    "type": "runCommands",
+    "shell": "bash",
+    "commands": [
+      "pytest --last-failed --maxfail=1 -q"
+    ]
+  }
+}

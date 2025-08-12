@@ -1,0 +1,17 @@
+{
+  "debug": false,
+  "log_level": "WARNING",
+  "database": {
+    "dsn": "postgresql://test:test@localhost:5432/test_data_collector",
+    "echo": false,
+    "pool_size": 2
+  },
+  "storage": {
+    "use_minio": false,
+    "local_storage_path": "./test_images"
+  },
+  "feature_flags": {
+    "save_llm_logs": false,
+    "enable_minio_storage": false
+  }
+}

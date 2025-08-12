@@ -1,0 +1,148 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": ["object", "null"],
+  "properties": {
+    "global_design_level": {
+      "type": ["object", "null"],
+      "properties": {
+        "type": {
+          "type": ["string", "null"],
+          "enum": [
+            "human",
+            "cartoon",
+            "human_video",
+            "object",
+            "animal",
+            "fantasy_figure"
+          ]
+        },
+        "cartoon": {
+          "type": ["object", "null"],
+          "properties": {
+            "animation": {
+              "type": ["string", "null"],
+              "enum": [null, "animated", "static"]
+            },
+            "representation": {
+              "type": ["string", "null"],
+              "description": "Wenn bekannt: z. B. 'Mickey Mouse', 'SpongeBob' o. Ä."
+            }
+          },
+          "additionalProperties": false
+        },
+        "object_type": {
+          "type": ["string", "null"],
+          "description": "z. B. 'Portrait', 'Stillleben', '3D-Modell' o. Ä."
+        },
+        "animal_type": {
+          "type": ["string", "null"],
+          "description": "z. B. 'Hund', 'Katze', 'Drache' o. Ä."
+        },
+        "fantasy_figure_type": {
+          "type": ["string", "null"],
+          "description": "z. B. 'EinhorN', 'Ork', 'Außerirdischer' o. Ä."
+        },
+        "other_characteristics": {
+          "type": ["string", "null"],
+          "description": "Sonstige globale Merkmale, die nicht in die obigen Kategorien passen."
+        }
+      },
+      "required": ["type"],
+      "additionalProperties": false
+    },
+    "middle_design_level": {
+      "type": ["object", "null"],
+      "properties": {
+        "lifelikeness": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 7,
+          "description": "1=sehr gering, 7=photorealistisch"
+        },
+        "realism": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 7,
+          "description": "1=sehr gering, 7=realistisch"
+        },
+        "animation_level": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 7,
+          "description": "1=keine, 7=volle Animation"
+        },
+        "partial_representation": {
+          "type": ["string", "null"],
+          "description": "Welche Teile sind dargestellt (z. B. 'nur Kopf', 'Halbkörper')"
+        },
+        "likeability": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 7,
+          "description": "1=sehr unsympathisch, 7=sehr sympathisch"
+        },
+        "competence": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 7,
+          "description": "1=sehr inkompetent, 7=sehr kompetent"
+        },
+        "other_technical_characteristics": {
+          "type": ["string", "null"],
+          "description": "z. B. Detailgrad (1–7) oder Technologie (AR, VR etc.)"
+        },
+        "role": {
+          "type": ["string", "null"],
+          "description": "Rolle, die gezeigt wird (z. B. 'Lehrer', 'Assistent')"
+        },
+        "role_model": {
+          "type": ["string", "null"],
+          "description": "Falls vorhanden: konkretes Vorbild"
+        },
+        "other_design_features": {
+          "type": ["string", "null"],
+          "description": "Sonstige gestalterische Merkmale"
+        },
+        "further_characteristics": {
+          "type": ["string", "null"],
+          "description": "Weitere Zwischen-Level-Eigenschaften"
+        }
+      },
+      "additionalProperties": false
+    },
+    "detailed_level": {
+      "type": ["object", "null"],
+      "properties": {
+        "age": {
+          "type": ["string", "integer", "null"],
+          "description": "z. B. 'Kind', 'Erwachsener' oder konkrete Zahl"
+        },
+        "gender": {
+          "type": ["string", "null"],
+          "description": "z. B. 'weiblich', 'männlich', 'non-binär'"
+        },
+        "clothing": {
+          "type": ["string", "null"],
+          "description": "Angaben zur Kleidung"
+        },
+        "weight": {
+          "type": ["string", "null"],
+          "description": "Gewicht oder Beschreibung ('schlank', 'kräftig')"
+        },
+        "other_features": {
+          "type": ["string", "null"],
+          "description": "Sonstige Detail-Merkmale"
+        }
+      },
+      "additionalProperties": false
+    },
+    "design_elements_not_in_PALD": {
+      "type": ["array", "null"],
+      "items": {
+        "type": ["string", "null"]
+      },
+      "description": "Liste von Design-Elementen, die im PALD-Modell nicht berücksichtigt sind"
+    }
+  },
+  "additionalProperties": false
+}

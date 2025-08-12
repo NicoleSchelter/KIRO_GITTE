@@ -1,0 +1,28 @@
+[project]
+name = "gitte"
+version = "0.1.0"
+description = "GITTE – Generative, modular learning assistant"
+requires-python = ">=3.11"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = []
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+[tool.ruff.isort]
+known-first-party = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra -q"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"

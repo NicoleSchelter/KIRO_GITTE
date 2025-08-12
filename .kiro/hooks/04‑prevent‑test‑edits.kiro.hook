@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "name": "Prevent Test Edits",
+  "description": "Blocks commits that change tests without proper commit tag",
+  "version": "1",
+  "when": {
+    "type": "fileStaged",
+    "patterns": ["tests/**/*.py"]
+  },
+  "then": {
+    "type": "validateCommit",
+    "requireInSubject": "[ALLOW-TEST-CHANGE]"
+  }
+}

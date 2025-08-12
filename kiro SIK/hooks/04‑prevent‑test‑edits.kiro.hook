@@ -1,0 +1,26 @@
+{
+  "enabled": true,
+  "name": "Prevent direct test edits with required commit body",
+  "description": "Block commits that modify tests unless tagged and with required explanation fields.",
+  "version": "1",
+  "when": { "type": "preCommit" },
+  "then": {
+    "type": "runCommand",
+    "shell": "powershell",
+    "command": "\
+$changed = git diff --cached --name-only | Select-String '^tests/'; \
+if ($changed) { \
+  $msg = (git log -1 --pretty=%B); \
+  if ($msg -notmatch '^(\\[ALLOW-TEST-CHANGE\\])') { \
+    Write-Host '❌ Commit blocked: missing [ALLOW-TEST-CHANGE] tag in subject.' -ForegroundColor Red; exit 1 \
+  } \
+  $missingFields = @(); \
+  foreach ($field in 'Reason:', 'Spec reference:', 'Scope:', 'Before:', 'After:') { \
+    if ($msg -notmatch [regex]::Escape($field)) { $missingFields += $field } \
+  } \
+  if ($missingFields.Count -gt 0) { \
+    Write-Host \"❌ Commit blocked: missing required fields -> $($missingFields -join ', ')\" -ForegroundColor Red; exit 1 \
+  } \
+}"
+  }
+}

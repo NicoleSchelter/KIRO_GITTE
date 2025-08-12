@@ -1,0 +1,18 @@
+{
+  "enabled": true,
+  "name": "Format & Lint",
+  "description": "Runs Ruff and Black to lint and format code",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["src/**/*.py", "tests/**/*.py", "pyproject.toml", "ruff.toml"]
+  },
+  "then": {
+    "type": "runCommands",
+    "shell": "bash",
+    "commands": [
+      "ruff check --fix .",
+      "black ."
+    ]
+  }
+}

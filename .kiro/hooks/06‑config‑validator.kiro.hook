@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "name": "Config Validator",
+  "description": "Validates Python and config files for syntax errors",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["**/*.py", "**/*.toml", "**/*.yaml", "**/*.yml", "**/*.json"]
+  },
+  "then": {
+    "type": "runCommands",
+    "shell": "bash",
+    "commands": [
+      "python -m py_compile $(git diff --name-only)"
+    ]
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "debug": false,
+  "log_level": "INFO",
+  "database": {
+    "echo": false,
+    "pool_size": 20,
+    "max_overflow": 30
+  },
+  "security": {
+    "session_timeout_hours": 8,
+    "password_hash_rounds": 14
+  },
+  "llm": {
+    "timeout_seconds": 60,
+    "max_retries": 5
+  },
+  "feature_flags": {
+    "save_llm_logs": true,
+    "enable_audit_logging": true,
+    "enable_consent_gate": true
+  }
+}

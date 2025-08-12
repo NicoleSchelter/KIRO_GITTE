@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  gitte-app:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      - ENVIRONMENT=development
+      - POSTGRES_DSN=postgresql://gitte:password@postgres:5432/data_collector
+      - OLLAMA_URL=http://ollama:11434
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+    volumes:
+      - ./config:/app/config
+      - ./generated_images:/app/generated_images
+      - ./src:/app/src
+    depends_on:
+      - postgres
+      - ollama
+      - minio
+    networks:
+      - gitte-network
+
+  postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=data_collector
+      - POSTGRES_USER=gitte
+      - POSTGRES_PASSWORD=password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    networks:
+      - gitte-network
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - gitte-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - gitte-network
+
+volumes:
+  postgres_data:
+  ollama_data:
+  minio_data:
+
+networks:
+  gitte-network:
+    driver: bridge

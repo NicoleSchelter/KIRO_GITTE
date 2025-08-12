@@ -1,0 +1,20 @@
+{
+  "enabled": true,
+  "name": "Run targeted tests on save",
+  "description": "Automatically runs the most relevant test file when PM Assistant source files are saved, falling back to last failed tests if no matching test is found",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "PM Assistant/core/**",
+      "PM Assistant/file_handlers/**",
+      "PM Assistant/processors/**",
+      "PM Assistant/utils/**"
+    ]
+  },
+  "then": {
+    "type": "runCommand",
+    "shell": "powershell",
+    "command": "$changed=$env:KIRO_CHANGED_FILE; $base=Split-Path $changed -Leaf; $stem=[IO.Path]::GetFileNameWithoutExtension($base); $test=\"tests/test_${stem}.py\"; if ($changed -match 'file_handlers.*\\\\(.+?)_handler\\.py'){ $test=\"tests/test_$($Matches[1])_handler.py\" }; if (Test-Path $test) { python -m pytest $test -q --maxfail=1 } else { python -m pytest -q --last-failed --maxfail=1 }"
+  }
+}

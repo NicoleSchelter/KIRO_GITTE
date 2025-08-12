@@ -1,0 +1,13 @@
+{
+  "debug": false,
+  "log_level": "INFO",
+  "database": {
+    "echo": false,
+    "pool_size": 10
+  },
+  "feature_flags": {
+    "save_llm_logs": true,
+    "use_federated_learning": true,
+    "enable_audit_logging": true
+  }
+}

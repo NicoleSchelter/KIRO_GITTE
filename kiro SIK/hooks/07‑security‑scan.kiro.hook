@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "name": "Security scan (Bandit) on commit",
+  "description": "Scan project for common security issues.",
+  "version": "1",
+  "when": { "type": "preCommit" },
+  "then": {
+    "type": "runCommand",
+    "shell": "powershell",
+    "command": "bandit -q -r \"PM Assistant\""
+  }
+}

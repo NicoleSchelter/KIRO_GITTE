@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "name": "Typecheck on save",
+  "description": "Run mypy on the changed file.",
+  "version": "1",
+  "when": { "type": "fileEdited", "patterns": ["**/*.py"] },
+  "then": {
+    "type": "runCommand",
+    "shell": "powershell",
+    "command": "mypy --hide-error-codes --no-error-summary \"$env:KIRO_CHANGED_FILE\""
+  }
+}

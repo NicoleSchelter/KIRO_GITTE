@@ -1,0 +1,20 @@
+{
+  "enabled": true,
+  "name": "Pre-Commit Quality Gate",
+  "description": "Runs lint, typecheck, tests, and security scan before commit",
+  "version": "1",
+  "when": {
+    "type": "beforeCommit"
+  },
+  "then": {
+    "type": "runCommands",
+    "shell": "bash",
+    "commands": [
+      "ruff check .",
+      "black --check .",
+      "mypy --config-file mypy.ini src",
+      "pytest -q -m 'not slow and not gpu and not e2e'",
+      "bandit -r src -lll"
+    ]
+  }
+}
