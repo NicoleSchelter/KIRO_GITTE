@@ -1,0 +1,196 @@
+# Prometheus alert rules for GITTE UX enhancements
+
+groups:
+  - name: gitte_ux_enhancements
+    rules:
+      # Image Correction System Alerts
+      - alert: ImageCorrectionHighFailureRate
+        expr: rate(gitte_ux_image_correction_failures_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          component: image_correction
+        annotations:
+          summary: "High image correction failure rate"
+          description: "Image correction failure rate is {{ $value }} failures per second over the last 5 minutes"
+
+      - alert: ImageCorrectionSlowProcessing
+        expr: histogram_quantile(0.95, rate(gitte_ux_image_correction_duration_seconds_bucket[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: image_correction
+        annotations:
+          summary: "Slow image correction processing"
+          description: "95th percentile image correction time is {{ $value }} seconds"
+
+      # Tooltip System Alerts
+      - alert: TooltipSystemHighLatency
+        expr: histogram_quantile(0.95, rate(gitte_ux_tooltip_response_time_seconds_bucket[5m])) > 0.5
+        for: 2m
+        labels:
+          severity: warning
+          component: tooltip_system
+        annotations:
+          summary: "High tooltip system latency"
+          description: "95th percentile tooltip response time is {{ $value }} seconds"
+
+      - alert: TooltipCacheLowHitRate
+        expr: rate(gitte_ux_tooltip_cache_hits_total[5m]) / rate(gitte_ux_tooltip_cache_requests_total[5m]) < 0.8
+        for: 5m
+        labels:
+          severity: warning
+          component: tooltip_system
+        annotations:
+          summary: "Low tooltip cache hit rate"
+          description: "Tooltip cache hit rate is {{ $value | humanizePercentage }}"
+
+      # Prerequisite Validation Alerts
+      - alert: PrerequisiteValidationFailures
+        expr: rate(gitte_ux_prerequisite_validation_failures_total[5m]) > 0.05
+        for: 3m
+        labels:
+          severity: critical
+          component: prerequisite_validation
+        annotations:
+          summary: "High prerequisite validation failure rate"
+          description: "Prerequisite validation failure rate is {{ $value }} failures per second"
+
+      - alert: PrerequisiteValidationTimeout
+        expr: histogram_quantile(0.95, rate(gitte_ux_prerequisite_validation_duration_seconds_bucket[5m])) > 30
+        for: 5m
+        labels:
+          severity: warning
+          component: prerequisite_validation
+        annotations:
+          summary: "Prerequisite validation timeouts"
+          description: "95th percentile prerequisite validation time is {{ $value }} seconds"
+
+      # Performance Monitoring Alerts
+      - alert: UXEnhancementHighMemoryUsage
+        expr: process_resident_memory_bytes{job="gitte-app"} / 1024 / 1024 > 2048
+        for: 5m
+        labels:
+          severity: warning
+          component: performance
+        annotations:
+          summary: "High memory usage by UX enhancements"
+          description: "GITTE application memory usage is {{ $value }} MB"
+
+      - alert: UXEnhancementHighCPUUsage
+        expr: rate(process_cpu_seconds_total{job="gitte-app"}[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: performance
+        annotations:
+          summary: "High CPU usage by UX enhancements"
+          description: "GITTE application CPU usage is {{ $value }}%"
+
+      # Cache System Alerts
+      - alert: RedisCacheDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: cache
+        annotations:
+          summary: "Redis cache is down"
+          description: "Redis cache service is not responding"
+
+      - alert: RedisCacheHighMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "Redis cache high memory usage"
+          description: "Redis memory usage is {{ $value | humanizePercentage }}"
+
+      # Accessibility Feature Alerts
+      - alert: AccessibilityFeatureErrors
+        expr: rate(gitte_ux_accessibility_errors_total[5m]) > 0.01
+        for: 3m
+        labels:
+          severity: warning
+          component: accessibility
+        annotations:
+          summary: "Accessibility feature errors detected"
+          description: "Accessibility feature error rate is {{ $value }} errors per second"
+
+      # External Service Integration Alerts
+      - alert: OllamaServiceDown
+        expr: up{job="ollama"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: external_service
+        annotations:
+          summary: "Ollama service is down"
+          description: "Ollama service is not responding to health checks"
+
+      - alert: DatabaseConnectionFailures
+        expr: rate(gitte_ux_database_connection_failures_total[5m]) > 0.01
+        for: 2m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Database connection failures"
+          description: "Database connection failure rate is {{ $value }} failures per second"
+
+  - name: gitte_system_health
+    rules:
+      # Overall System Health
+      - alert: GITTEServiceDown
+        expr: up{job="gitte-app"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "GITTE application is down"
+          description: "GITTE application is not responding to health checks"
+
+      - alert: HighErrorRate
+        expr: rate(gitte_http_requests_total{status=~"5.."}[5m]) / rate(gitte_http_requests_total[5m]) > 0.05
+        for: 3m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "High error rate detected"
+          description: "HTTP 5xx error rate is {{ $value | humanizePercentage }}"
+
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(gitte_http_request_duration_seconds_bucket[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High response time"
+          description: "95th percentile response time is {{ $value }} seconds"
+
+      # Disk Space Alerts
+      - alert: LowDiskSpace
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "Low disk space"
+          description: "Disk space usage is above 90%"
+
+      # Load Average Alerts
+      - alert: HighLoadAverage
+        expr: node_load1 > 4
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High load average"
+          description: "Load average is {{ $value }}"

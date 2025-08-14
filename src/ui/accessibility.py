@@ -28,10 +28,10 @@ class AccessibilityHelper:
     ACCESSIBLE_COLORS = {
         "primary": "#0066CC",  # Blue - 4.5:1 contrast on white
         "secondary": "#6C757D",  # Gray - 4.5:1 contrast on white
-        "success": "#28A745",  # Green - 4.5:1 contrast on white
-        "warning": "#FFC107",  # Yellow - needs dark text
-        "danger": "#DC3545",  # Red - 4.5:1 contrast on white
-        "info": "#17A2B8",  # Cyan - 4.5:1 contrast on white
+        "success": "#1B7332",  # Green - 4.5:1 contrast on white (darker than original)
+        "warning": "#856404",  # Dark yellow - 4.5:1 contrast on white
+        "danger": "#C82333",  # Red - 4.5:1 contrast on white (darker than original)
+        "info": "#0F6674",  # Dark cyan - 4.5:1 contrast on white
         "light": "#F8F9FA",  # Light gray
         "dark": "#343A40",  # Dark gray - 4.5:1 contrast on white
         "white": "#FFFFFF",
@@ -42,10 +42,10 @@ class AccessibilityHelper:
     HIGH_CONTRAST_COLORS = {
         "primary": "#0000FF",  # Pure blue
         "secondary": "#000000",  # Black
-        "success": "#008000",  # Pure green
-        "warning": "#FFD700",  # Gold
-        "danger": "#FF0000",  # Pure red
-        "info": "#008080",  # Teal
+        "success": "#006400",  # Dark green - 7:1 contrast on white
+        "warning": "#5A4D00",  # Very dark yellow - 7:1 contrast on white
+        "danger": "#8B0000",  # Dark red - 7:1 contrast on white
+        "info": "#004D4D",  # Very dark teal - 7:1 contrast on white
         "light": "#FFFFFF",  # White
         "dark": "#000000",  # Black
         "white": "#FFFFFF",
@@ -275,6 +275,14 @@ class AccessibilityHelper:
             }
         }
         
+        /* Responsive design support */
+        @media (max-width: 768px) {
+            .stButton > button {
+                min-width: 100% !important;
+                margin-bottom: 8px !important;
+            }
+        }
+        
         /* Skip link styles */
         .skip-link:focus {
             position: absolute !important;
@@ -348,6 +356,16 @@ class KeyboardNavigation:
                 });
             }
             
+            // Track and manage activeElement for accessibility
+            if (event.key === 'Tab') {
+                setTimeout(() => {
+                    const activeElement = document.activeElement;
+                    if (activeElement && activeElement.tagName) {
+                        activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                }, 10);
+            }
+            
             // Arrow key navigation for tab-like interfaces
             if (event.target.getAttribute('role') === 'tab') {
                 let currentTab = event.target;
@@ -358,10 +376,12 @@ class KeyboardNavigation:
                 if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
                     let nextIndex = (currentIndex + 1) % tabs.length;
                     tabs[nextIndex].focus();
+                    tabs[nextIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
                     event.preventDefault();
                 } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
                     let prevIndex = (currentIndex - 1 + tabs.length) % tabs.length;
                     tabs[prevIndex].focus();
+                    tabs[prevIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
                     event.preventDefault();
                 }
             }

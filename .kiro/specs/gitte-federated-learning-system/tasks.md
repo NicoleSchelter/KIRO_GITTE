@@ -6,11 +6,13 @@
 
 
 
+
   - Create directory structure following 4-layer architecture (ui, logic, services, data)
   - Set up Docker Compose with PostgreSQL, MinIO, Ollama containers
   - Create Makefile with dev, test, migrate, seed, run targets
   - Initialize configuration management system with feature flags
   - _Requirements: 1.1, 1.2, 1.3, 13.1, 13.2, 17.1, 17.2_
+
 
 - [x] 2. Implement core data models and database schema
 
@@ -26,6 +28,7 @@
   - Set up database connection and session management
   - _Requirements: 9.1, 9.2, 4.1, 4.2, 2.2, 4b.2, 4b.4_
 
+
 - [x] 3. Build authentication and user management system
 
 
@@ -37,6 +40,7 @@
   - Implement role-based access control (Admin vs Participant)
   - Add user pseudonymization for privacy compliance
   - Create unit tests for authentication logic
+
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 12.1, 14.1_
 
 - [x] 4. Implement consent management system
@@ -49,6 +53,7 @@
   - Build consent recording with timestamp and version tracking
   - Implement consent withdrawal functionality
   - Add consent checking middleware for all operations
+
   - Create consent UI components in Streamlit
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 14.5_
 
@@ -61,6 +66,7 @@
   - Create versioned PALD JSON schema with validation rules
   - Implement PALD data validation against schema
   - Build PALD comparison (diff) functionality
+
   - Create PALD coverage calculation utilities
   - Add schema evolution support for new attributes
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4a.1, 4a.2, 4a.3, 4a.4_
@@ -72,6 +78,7 @@
   - Create attribute extraction system to identify new embodiment features from chat text
   - Implement privacy-preserving attribute tracking with occurrence counts
   - Build threshold-based schema evolution with configurable limits
+
   - Create schema versioning system with backward compatibility
   - Add automatic schema update proposals when thresholds are reached
   - Implement PALD data migration for schema version upgrades
@@ -84,6 +91,7 @@
 
   - Create abstract LLMProvider interface
   - Implement OllamaProvider with HTTP client
+
   - Add model configuration and swapping capabilities
   - Implement streaming response handling for performance
   - Create retry logic with exponential backoff
@@ -97,6 +105,7 @@
 
 
   - Create abstract Text2ImageProvider interface
+
   - Implement StableDiffusionProvider using Diffusers library
   - Add GPU/CPU fallback mechanism
   - Create avatar variation generation functionality
@@ -110,6 +119,7 @@
 
 
 
+
   - Implement write-ahead logging (WAL) for all AI interactions
   - Create parent-child linking for conversation threads
   - Add request ID tracking across system components
@@ -118,6 +128,7 @@
   - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
 
 - [x] 9. Build Streamlit UI components
+
 
 
 
@@ -138,6 +149,7 @@
 
 
 
+
   - Create storage service abstraction layer
   - Implement MinIO integration for object storage
   - Add local filesystem fallback mechanism
@@ -152,12 +164,14 @@
 
 
 
+
   - Create FederatedLearningClient for embodiment personalization
   - Implement structured signal collection (PALD slots, feedback clicks)
   - Build local model update creation without raw data transmission
   - Add differential privacy mechanisms with configurable parameters
   - Create FL server stub for aggregation
   - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5_
+
 
 - [x] 12. Implement guided onboarding flow
 
@@ -170,6 +184,7 @@
   - Create personalization data collection and storage
   - Build flow completion tracking and state management
   - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.5, 11.6_
+
 
 - [x] 13. Add comprehensive error handling and resilience
 
@@ -184,6 +199,7 @@
 
 
 
+
 - [x] 14. Implement security and privacy features
 
 
@@ -191,6 +207,7 @@
 
   - Add AES-256 encryption for data backups and exports
   - Implement TLS 1.2+ for all network communications
+
   - Create data deletion functionality with 72-hour compliance
   - Add input validation and sanitization
   - Implement security headers and CSRF protection
@@ -202,6 +219,7 @@
   - Implement WCAG 2.1 AA compliance throughout UI
   - Add keyboard navigation support
   - Create ARIA labels for screen reader compatibility
+
   - Ensure sufficient color contrast ratios
   - Implement chat interface cleanup after greeting
   - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5, 15.6_
@@ -214,6 +232,7 @@
   - Create integration tests for database operations and external services
   - Implement end-to-end tests for critical user flows
   - Add performance tests for LLM and image generation
+
   - Create smoke tests for chat roundtrip, image generation, and audit logging
   - Set up CI pipeline with automated test execution
   - _Requirements: 13.3, 13.4, 16.1, 16.2, 16.3_
@@ -223,6 +242,7 @@
 
   - Create environment-specific configuration files
   - Add environment variable override functionality
+
   - Implement centralized text management for internationalization
   - Create feature flag system with runtime toggling
   - Add configuration validation and error handling
@@ -232,6 +252,8 @@
 
 
 - [x] 18. Build administrative tools and monitoring
+
+
 
 
   - Create admin dashboard with system statistics

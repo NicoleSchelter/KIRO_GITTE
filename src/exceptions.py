@@ -4,7 +4,7 @@ Provides structured error handling with user-friendly messages and proper catego
 """
 
 from enum import Enum
-from typing import Any
+from typing import Any, List
 
 
 class ErrorSeverity(str, Enum):
@@ -512,5 +512,268 @@ class SuspiciousActivityError(SecurityError):
             f"Suspicious activity detected: {activity_type}",
             user_message="Suspicious activity detected. Your account may be temporarily restricted.",
             details={"activity_type": activity_type},
+            **kwargs,
+        )
+
+
+# UX Enhancement Specific Exceptions
+
+# Image Processing Errors
+class ImageProcessingError(GITTEError):
+    """Base class for image processing errors."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message,
+            user_message="Image processing failed. Please try again with a different image.",
+            category=ErrorCategory.EXTERNAL_SERVICE,
+            severity=ErrorSeverity.MEDIUM,
+            **kwargs,
+        )
+
+
+class ImageIsolationError(ImageProcessingError):
+    """Image isolation specific errors."""
+
+    def __init__(self, message: str, isolation_method: str = "unknown", **kwargs):
+        super().__init__(
+            f"Image isolation failed using {isolation_method}: {message}",
+            details={"isolation_method": isolation_method},
+            **kwargs,
+        )
+        self.user_message = "Unable to isolate person from background. The original image will be used instead."
+
+
+class BackgroundRemovalError(ImageIsolationError):
+    """Background removal specific errors."""
+
+    def __init__(self, message: str, method: str = "rembg", **kwargs):
+        super().__init__(
+            message,
+            isolation_method=method,
+            user_message="Background removal failed. Using original image instead.",
+            **kwargs,
+        )
+
+
+class PersonDetectionError(ImageProcessingError):
+    """Person detection specific errors."""
+
+    def __init__(self, message: str, detection_method: str = "hog", **kwargs):
+        super().__init__(
+            f"Person detection failed using {detection_method}: {message}",
+            user_message="Unable to detect person in image. Please ensure the image contains a clear person.",
+            details={"detection_method": detection_method},
+            **kwargs,
+        )
+
+
+class ImageQualityError(ImageProcessingError):
+    """Image quality assessment errors."""
+
+    def __init__(self, message: str, quality_issues: List[str] = None, **kwargs):
+        super().__init__(
+            f"Image quality assessment failed: {message}",
+            user_message="Unable to assess image quality. The image may be corrupted or in an unsupported format.",
+            details={"quality_issues": quality_issues or []},
+            **kwargs,
+        )
+
+
+class ImageTimeoutError(ImageProcessingError):
+    """Image processing timeout errors."""
+
+    def __init__(self, operation: str, timeout_seconds: int, **kwargs):
+        message = f"Image {operation} timed out after {timeout_seconds} seconds"
+        super().__init__(message, **kwargs)
+        self.user_message = f"Image processing is taking too long. Please try with a smaller image."
+        self.severity = ErrorSeverity.HIGH
+        self.details.update({"operation": operation, "timeout_seconds": timeout_seconds})
+
+
+class UnsupportedImageFormatError(ImageProcessingError):
+    """Unsupported image format errors."""
+
+    def __init__(self, format_detected: str, supported_formats: List[str], **kwargs):
+        super().__init__(
+            f"Unsupported image format: {format_detected}",
+            user_message=f"Please use a supported image format: {', '.join(supported_formats)}",
+            severity=ErrorSeverity.LOW,
+            details={"format_detected": format_detected, "supported_formats": supported_formats},
+            **kwargs,
+        )
+
+
+class ImageCorruptionError(ImageProcessingError):
+    """Image corruption or loading errors."""
+
+    def __init__(self, image_path: str, **kwargs):
+        super().__init__(
+            f"Image file is corrupted or cannot be loaded: {image_path}",
+            user_message="The image file appears to be corrupted. Please try uploading a different image.",
+            severity=ErrorSeverity.MEDIUM,
+            details={"image_path": image_path},
+            **kwargs,
+        )
+
+
+# Prerequisite Check Errors
+class PrerequisiteError(GITTEError):
+    """Base class for prerequisite check errors."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message,
+            user_message="System prerequisites are not met. Please check system requirements.",
+            category=ErrorCategory.SYSTEM,
+            severity=ErrorSeverity.HIGH,
+            **kwargs,
+        )
+
+
+class PrerequisiteCheckFailedError(PrerequisiteError):
+    """Prerequisite check execution failed."""
+
+    def __init__(self, checker_name: str, error_details: str, **kwargs):
+        super().__init__(
+            f"Prerequisite check failed for {checker_name}: {error_details}",
+            user_message=f"Unable to verify {checker_name}. Some features may be unavailable.",
+            details={"checker_name": checker_name, "error_details": error_details},
+            **kwargs,
+        )
+
+
+class RequiredPrerequisiteError(PrerequisiteError):
+    """Required prerequisite not met."""
+
+    def __init__(
+        self,
+        prerequisite_name: str,
+        resolution_steps: List[str] = None,
+        **kwargs,
+    ):
+        super().__init__(
+            f"Required prerequisite not met: {prerequisite_name}",
+            user_message=f"Please resolve the {prerequisite_name} requirement to continue.",
+            severity=ErrorSeverity.CRITICAL,
+            details={
+                "prerequisite_name": prerequisite_name,
+                "resolution_steps": resolution_steps or [],
+            },
+            **kwargs,
+        )
+
+
+class ServiceUnavailableError(PrerequisiteError):
+    """External service unavailable."""
+
+    def __init__(self, service_name: str, connection_details: str = "", **kwargs):
+        super().__init__(
+            f"Service unavailable: {service_name}",
+            user_message=f"The {service_name} service is currently unavailable. Please try again later.",
+            category=ErrorCategory.EXTERNAL_SERVICE,
+            details={"service_name": service_name, "connection_details": connection_details},
+            **kwargs,
+        )
+
+
+class ConsentRequiredError(PrerequisiteError):
+    """User consent required for operation."""
+
+    def __init__(self, consent_types: List[str], **kwargs):
+        consent_list = ", ".join(consent_types)
+        super().__init__(
+            f"Required consent not provided: {consent_list}",
+            user_message=f"Please provide consent for {consent_list} to use this feature.",
+            category=ErrorCategory.AUTHORIZATION,
+            severity=ErrorSeverity.MEDIUM,
+            details={"required_consents": consent_types},
+            **kwargs,
+        )
+
+
+# Tooltip System Errors
+class TooltipError(GITTEError):
+    """Base class for tooltip system errors."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message,
+            user_message="Help system temporarily unavailable.",
+            category=ErrorCategory.SYSTEM,
+            severity=ErrorSeverity.LOW,
+            **kwargs,
+        )
+
+
+# Batch Processing Errors
+class BatchProcessingError(GITTEError):
+    """Batch image processing errors."""
+
+    def __init__(
+        self,
+        message: str,
+        failed_images: List[str] = None,
+        total_images: int = 0,
+        **kwargs,
+    ):
+        super().__init__(
+            f"Batch processing failed: {message}",
+            user_message="Multiple images failed processing. Please check individual images.",
+            category=ErrorCategory.EXTERNAL_SERVICE,
+            severity=ErrorSeverity.HIGH,
+            details={
+                "failed_images": failed_images or [],
+                "total_images": total_images,
+                "failure_rate": len(failed_images or []) / max(1, total_images),
+            },
+            **kwargs,
+        )
+
+
+class CircuitBreakerOpenError(ExternalServiceError):
+    """Circuit breaker is open for service."""
+
+    def __init__(
+        self,
+        service_name: str,
+        failure_count: int,
+        recovery_time_seconds: int,
+        **kwargs,
+    ):
+        super().__init__(
+            service_name,
+            f"Circuit breaker is open after {failure_count} failures. Recovery in {recovery_time_seconds}s.",
+            user_message=f"The {service_name} service is temporarily unavailable due to repeated failures. Please try again in {recovery_time_seconds} seconds.",
+            severity=ErrorSeverity.HIGH,
+            details={
+                "failure_count": failure_count,
+                "recovery_time_seconds": recovery_time_seconds,
+                "circuit_state": "open",
+            },
+            **kwargs,
+        )
+
+
+class RetryExhaustedError(GITTEError):
+    """All retry attempts exhausted."""
+
+    def __init__(
+        self,
+        operation: str,
+        max_retries: int,
+        last_error: str,
+        **kwargs,
+    ):
+        super().__init__(
+            f"Operation {operation} failed after {max_retries} retries. Last error: {last_error}",
+            user_message=f"Unable to complete {operation} after multiple attempts. Please try again later.",
+            category=ErrorCategory.EXTERNAL_SERVICE,
+            severity=ErrorSeverity.HIGH,
+            details={
+                "operation": operation,
+                "max_retries": max_retries,
+                "last_error": last_error,
+            },
             **kwargs,
         )

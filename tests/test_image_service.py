@@ -451,3 +451,343 @@ def sample_image_request():
         num_inference_steps=20,
         guidance_scale=7.5,
     )
+
+
+class TestImageServiceIntegration:
+    """Test image service integration with isolation and quality detection."""
+
+    def test_image_service_with_isolation_enabled(self):
+        """Test image service with isolation service enabled."""
+        with patch("src.services.image_service.config") as mock_config:
+            # Mock config to enable isolation
+            mock_config.feature_flags.enable_image_isolation = True
+            mock_config.feature_flags.enable_image_quality_detection = True
+            mock_config.image_isolation.enabled = True
+            mock_config.image_isolation.detection_confidence_threshold = 0.7
+            mock_config.image_isolation.background_removal_method = "rembg"
+            mock_config.image_isolation.fallback_to_original = True
+            mock_config.image_isolation.max_processing_time = 10
+            mock_config.image_isolation.output_format = "PNG"
+            mock_config.image_isolation.uniform_background_color = (255, 255, 255)
+            mock_config.image_isolation.edge_refinement_enabled = True
+
+            # Mock the isolation service creation
+            with patch("src.services.image_service.ImageIsolationService") as mock_isolation_class:
+                with patch("src.services.image_service.ImageQualityDetector") as mock_detector_class:
+                    mock_isolation = Mock()
+                    mock_detector = Mock()
+                    mock_isolation_class.return_value = mock_isolation
+                    mock_detector_class.return_value = mock_detector
+
+                    service = ImageService(provider=MockImageProvider())
+
+                    assert service.isolation_service is mock_isolation
+                    assert service.quality_detector is mock_detector
+
+    def test_image_service_with_isolation_disabled(self):
+        """Test image service with isolation service disabled."""
+        with patch("src.services.image_service.config") as mock_config:
+            mock_config.feature_flags.enable_image_isolation = False
+            mock_config.feature_flags.enable_image_quality_detection = False
+
+            service = ImageService(provider=MockImageProvider())
+
+            assert service.isolation_service is None
+            assert service.quality_detector is None
+
+    def test_generate_embodiment_image_with_processing_pipeline(self):
+        """Test image generation with full processing pipeline."""
+        mock_provider = MockImageProvider()
+        
+        with patch("src.services.image_service.config") as mock_config:
+            mock_config.feature_flags.enable_image_isolation = True
+            mock_config.feature_flags.enable_image_quality_detection = True
+            mock_config.image_isolation.enabled = True
+
+            with patch("src.services.image_service.ImageIsolationService") as mock_isolation_class:
+                with patch("src.services.image_service.ImageQualityDetector") as mock_detector_class:
+                    # Set up mocks
+                    mock_isolation = Mock()
+                    mock_detector = Mock()
+                    mock_isolation_class.return_value = mock_isolation
+                    mock_detector_class.return_value = mock_detector
+
+                    # Mock quality detection - image passes
+                    from src.services.image_quality_detector import DetectionResult
+                    mock_detector.detect_faulty_image.return_value = DetectionResult(
+                        is_faulty=False,
+                        reasons=[],
+                        confidence_score=0.9,
+                        quality_metrics={},
+                        person_count=1,
+                        processing_time=0.1,
+                        recommendations=[]
+                    )
+
+                    # Mock isolation - successful
+                    from src.services.image_isolation_service import IsolationResult
+                    mock_isolation.isolate_person.return_value = IsolationResult(
+                        success=True,
+                        isolated_image_path="/path/to/isolated.png",
+                        original_image_path="/path/to/original.png",
+                        confidence_score=0.8,
+                        processing_time=0.5,
+                        method_used="rembg"
+                    )
+
+                    service = ImageService(provider=mock_provider)
+                    result = service.generate_embodiment_image("Test prompt")
+
+                    # Should return isolated image
+                    assert result.image_path == "/path/to/isolated.png"
+                    assert result.metadata is not None
+                    assert "isolation" in result.metadata
+                    assert result.metadata["isolation"]["success"] is True
+
+                    # Check that both services were called
+                    mock_detector.detect_faulty_image.assert_called_once()
+                    mock_isolation.isolate_person.assert_called_once()
+
+    def test_generate_embodiment_image_with_faulty_detection(self):
+        """Test image generation when quality detection finds issues."""
+        mock_provider = MockImageProvider()
+        
+        with patch("src.services.image_service.config") as mock_config:
+            mock_config.feature_flags.enable_image_isolation = True
+            mock_config.feature_flags.enable_image_quality_detection = True
+
+            with patch("src.services.image_service.ImageIsolationService") as mock_isolation_class:
+                with patch("src.services.image_service.ImageQualityDetector") as mock_detector_class:
+                    mock_isolation = Mock()
+                    mock_detector = Mock()
+                    mock_isolation_class.return_value = mock_isolation
+                    mock_detector_class.return_value = mock_detector
+
+                    # Mock quality detection - image is faulty
+                    from src.services.image_quality_detector import DetectionResult, FaultyImageReason
+                    mock_detector.detect_faulty_image.return_value = DetectionResult(
+                        is_faulty=True,
+                        reasons=[FaultyImageReason.NO_PERSON_DETECTED],
+                        confidence_score=0.2,
+                        quality_metrics={},
+                        person_count=0,
+                        processing_time=0.1,
+                        recommendations=["Adjust prompt to emphasize person generation"]
+                    )
+
+                    service = ImageService(provider=mock_provider)
+                    result = service.generate_embodiment_image("Test prompt")
+
+                    # Should skip isolation and return original
+                    assert result.metadata is not None
+                    assert "quality_check" in result.metadata
+                    assert result.metadata["quality_check"]["is_faulty"] is True
+
+                    # Isolation should not be called for faulty images
+                    mock_isolation.isolate_person.assert_not_called()
+
+    def test_generate_embodiment_image_with_isolation_failure(self):
+        """Test image generation when isolation fails."""
+        mock_provider = MockImageProvider()
+        
+        with patch("src.services.image_service.config") as mock_config:
+            mock_config.feature_flags.enable_image_isolation = True
+            mock_config.feature_flags.enable_image_quality_detection = True
+
+            with patch("src.services.image_service.ImageIsolationService") as mock_isolation_class:
+                with patch("src.services.image_service.ImageQualityDetector") as mock_detector_class:
+                    mock_isolation = Mock()
+                    mock_detector = Mock()
+                    mock_isolation_class.return_value = mock_isolation
+                    mock_detector_class.return_value = mock_detector
+
+                    # Mock quality detection - image passes
+                    from src.services.image_quality_detector import DetectionResult
+                    mock_detector.detect_faulty_image.return_value = DetectionResult(
+                        is_faulty=False,
+                        reasons=[],
+                        confidence_score=0.9,
+                        quality_metrics={},
+                        person_count=1,
+                        processing_time=0.1,
+                        recommendations=[]
+                    )
+
+                    # Mock isolation - fails
+                    from src.services.image_isolation_service import IsolationResult
+                    mock_isolation.isolate_person.return_value = IsolationResult(
+                        success=False,
+                        isolated_image_path=None,
+                        original_image_path="/path/to/original.png",
+                        confidence_score=0.1,
+                        processing_time=0.5,
+                        method_used="rembg",
+                        error_message="No person detected"
+                    )
+
+                    service = ImageService(provider=mock_provider)
+                    result = service.generate_embodiment_image("Test prompt")
+
+                    # Should return original image with failure metadata
+                    assert result.metadata is not None
+                    assert "isolation" in result.metadata
+                    assert result.metadata["isolation"]["success"] is False
+                    assert result.metadata["isolation"]["fallback_used"] is True
+
+    def test_get_isolation_service_status(self):
+        """Test getting isolation service status."""
+        with patch("src.services.image_service.config") as mock_config:
+            mock_config.feature_flags.enable_image_isolation = True
+
+            with patch("src.services.image_service.ImageIsolationService") as mock_isolation_class:
+                mock_isolation = Mock()
+                mock_isolation.config.background_removal_method = "rembg"
+                mock_isolation.config.detection_confidence_threshold = 0.7
+                mock_isolation.config.max_processing_time = 10
+                mock_isolation.config.fallback_to_original = True
+                mock_isolation_class.return_value = mock_isolation
+
+                service = ImageService(provider=MockImageProvider())
+                status = service.get_isolation_service_status()
+
+                assert status["enabled"] is True
+                assert status["config"]["background_removal_method"] == "rembg"
+                assert status["config"]["detection_confidence_threshold"] == 0.7
+
+    def test_get_isolation_service_status_disabled(self):
+        """Test getting isolation service status when disabled."""
+        with patch("src.services.image_service.config") as mock_config:
+            mock_config.feature_flags.enable_image_isolation = False
+
+            service = ImageService(provider=MockImageProvider())
+            status = service.get_isolation_service_status()
+
+            assert status["enabled"] is False
+            assert "reason" in status
+
+    def test_get_quality_detector_status(self):
+        """Test getting quality detector status."""
+        with patch("src.services.image_service.config") as mock_config:
+            mock_config.feature_flags.enable_image_quality_detection = True
+
+            with patch("src.services.image_service.ImageQualityDetector") as mock_detector_class:
+                mock_detector = Mock()
+                mock_detector.config.min_person_confidence = 0.7
+                mock_detector.config.max_people_allowed = 1
+                mock_detector.config.min_quality_score = 0.6
+                mock_detector.config.blur_threshold = 0.3
+                mock_detector.config.noise_threshold = 0.1
+                mock_detector_class.return_value = mock_detector
+
+                service = ImageService(provider=MockImageProvider())
+                status = service.get_quality_detector_status()
+
+                assert status["enabled"] is True
+                assert status["config"]["min_person_confidence"] == 0.7
+                assert status["config"]["max_people_allowed"] == 1
+
+    def test_analyze_image_batch_quality(self):
+        """Test batch quality analysis."""
+        with patch("src.services.image_service.config") as mock_config:
+            mock_config.feature_flags.enable_image_quality_detection = True
+
+            with patch("src.services.image_service.ImageQualityDetector") as mock_detector_class:
+                mock_detector = Mock()
+                
+                # Mock batch analysis result
+                from src.services.image_quality_detector import BatchProcessingResult, FaultyImageReason
+                mock_batch_result = BatchProcessingResult(
+                    total_images=5,
+                    faulty_images=2,
+                    faulty_percentage=40.0,
+                    should_regenerate=False,
+                    common_issues=[FaultyImageReason.POOR_QUALITY],
+                    batch_quality_score=0.7,
+                    processing_time=1.5
+                )
+                mock_detector.analyze_batch_processing.return_value = mock_batch_result
+                mock_detector_class.return_value = mock_detector
+
+                service = ImageService(provider=MockImageProvider())
+                result = service.analyze_image_batch_quality(["/path/1.jpg", "/path/2.jpg"])
+
+                assert result["total_images"] == 5
+                assert result["faulty_images"] == 2
+                assert result["faulty_percentage"] == 40.0
+                assert result["should_regenerate"] is False
+                assert "poor_quality" in result["common_issues"]
+
+    def test_analyze_image_batch_quality_no_detector(self):
+        """Test batch quality analysis when detector is not available."""
+        with patch("src.services.image_service.config") as mock_config:
+            mock_config.feature_flags.enable_image_quality_detection = False
+
+            service = ImageService(provider=MockImageProvider())
+            result = service.analyze_image_batch_quality(["/path/1.jpg"])
+
+            assert "error" in result
+            assert "not available" in result["error"]
+
+    def test_performance_metrics_include_new_operations(self):
+        """Test that performance metrics include isolation and quality operations."""
+        mock_provider = MockImageProvider()
+        
+        with patch("src.services.image_service.config") as mock_config:
+            mock_config.feature_flags.enable_image_isolation = True
+            mock_config.feature_flags.enable_image_quality_detection = True
+
+            with patch("src.services.image_service.ImageIsolationService") as mock_isolation_class:
+                with patch("src.services.image_service.ImageQualityDetector") as mock_detector_class:
+                    mock_isolation = Mock()
+                    mock_detector = Mock()
+                    mock_isolation_class.return_value = mock_isolation
+                    mock_detector_class.return_value = mock_detector
+
+                    # Mock successful operations
+                    from src.services.image_quality_detector import DetectionResult
+                    from src.services.image_isolation_service import IsolationResult
+                    
+                    mock_detector.detect_faulty_image.return_value = DetectionResult(
+                        is_faulty=False, reasons=[], confidence_score=0.9,
+                        quality_metrics={}, person_count=1, processing_time=0.1,
+                        recommendations=[]
+                    )
+                    
+                    mock_isolation.isolate_person.return_value = IsolationResult(
+                        success=True, isolated_image_path="/isolated.png",
+                        original_image_path="/original.png", confidence_score=0.8,
+                        processing_time=0.5, method_used="rembg"
+                    )
+
+                    service = ImageService(provider=mock_provider)
+                    service.generate_embodiment_image("Test prompt")
+
+                    metrics = service.get_performance_metrics()
+                    
+                    # Check new metrics are present
+                    assert "isolation_operations" in metrics
+                    assert "isolation_successes" in metrics
+                    assert "quality_checks" in metrics
+                    assert "faulty_images_detected" in metrics
+                    
+                    # Check values
+                    assert metrics["isolation_operations"] == 1
+                    assert metrics["isolation_successes"] == 1
+                    assert metrics["quality_checks"] == 1
+                    assert metrics["faulty_images_detected"] == 0
+
+    def test_service_status_includes_new_services(self):
+        """Test that service status includes isolation and quality detection services."""
+        with patch("src.services.image_service.config") as mock_config:
+            mock_config.feature_flags.enable_image_isolation = True
+            mock_config.feature_flags.enable_image_quality_detection = True
+
+            with patch("src.services.image_service.ImageIsolationService"):
+                with patch("src.services.image_service.ImageQualityDetector"):
+                    service = ImageService(provider=MockImageProvider())
+                    status = service.get_service_status()
+
+                    assert "isolation_service" in status
+                    assert "quality_detector" in status
+                    assert status["isolation_service"]["enabled"] is True
+                    assert status["quality_detector"]["enabled"] is True

@@ -23,6 +23,7 @@ from src.ui.consent_ui import check_and_render_consent_gate, render_onboarding_c
 from src.ui.image_ui import render_image_gallery, render_image_generation_interface
 from src.ui.onboarding_ui import render_guided_onboarding_flow, render_onboarding_summary
 from src.ui.survey_ui import render_personalization_survey
+from src.ui.tooltip_integration import get_tooltip_integration, tooltip_button
 
 
 def main():
@@ -34,8 +35,12 @@ def main():
         initial_sidebar_state="expanded",
     )
 
-    # Apply accessibility features
+    # Apply comprehensive accessibility features
     apply_accessibility_features()
+    _apply_enhanced_accessibility_features()
+    
+    # Initialize tooltip system
+    tooltip_integration = get_tooltip_integration()
 
     # Initialize session state
     if "current_time" not in st.session_state:
@@ -148,7 +153,7 @@ def render_onboarding_chat_step(user_id: str) -> None:
     render_chat_interface(user_id)
 
     # Continue button
-    if st.button("Continue to Image Generation", type="primary"):
+    if tooltip_button("Continue to Image Generation", "save_button", type="primary"):
         st.session_state.onboarding_step = "image_generation"
         st.rerun()
 
@@ -173,7 +178,7 @@ def render_onboarding_image_step(user_id: str) -> None:
         st.session_state.generated_avatar = generated_image
 
     # Continue button
-    if st.button("Complete Onboarding", type="primary"):
+    if tooltip_button("Complete Onboarding", "save_button", type="primary"):
         st.session_state.onboarding_step = "complete"
         st.rerun()
 
@@ -220,7 +225,7 @@ def render_onboarding_complete_step(user_id: str) -> None:
             st.write(f"**Personality:** {embodiment.get('personality', 'Not specified')}")
             st.write(f"**Communication:** {embodiment.get('communication_style', 'Not specified')}")
 
-    if st.button("Start Using GITTE", type="primary"):
+    if tooltip_button("Start Using GITTE", "save_button", type="primary"):
         st.session_state.onboarding_complete = True
         st.rerun()
 
@@ -335,6 +340,422 @@ def render_system_status() -> None:
         for flag_name in config.feature_flags.__dataclass_fields__:
             flag_value = getattr(config.feature_flags, flag_name)
             st.write(f"**{flag_name}:**", "✅" if flag_value else "❌")
+
+
+def _apply_enhanced_accessibility_features():
+    """Apply enhanced accessibility features for WCAG 2.1 AA compliance."""
+    enhanced_styles = """
+    <style>
+    /* Enhanced focus indicators */
+    .stButton > button:focus,
+    .stSelectbox > div > div:focus,
+    .stTextInput > div > div > input:focus,
+    .stTextArea > div > div > textarea:focus,
+    .stCheckbox > label:focus-within,
+    .stRadio > div:focus-within,
+    .stSlider > div:focus-within,
+    .stNumberInput > div > div > input:focus {
+        outline: 3px solid #005FCC !important;
+        outline-offset: 2px !important;
+        box-shadow: 0 0 0 3px rgba(0, 95, 204, 0.3) !important;
+    }
+    
+    /* High contrast mode enhancements */
+    @media (prefers-contrast: high) {
+        .stApp {
+            background-color: #FFFFFF !important;
+            color: #000000 !important;
+        }
+        
+        .stButton > button {
+            border: 2px solid #000000 !important;
+            background-color: #FFFFFF !important;
+            color: #000000 !important;
+        }
+        
+        .stButton > button:hover {
+            background-color: #000000 !important;
+            color: #FFFFFF !important;
+        }
+        
+        .stSelectbox > div > div,
+        .stTextInput > div > div > input,
+        .stTextArea > div > div > textarea {
+            border: 2px solid #000000 !important;
+            background-color: #FFFFFF !important;
+            color: #000000 !important;
+        }
+        
+        .stTabs [data-baseweb="tab"] {
+            border: 2px solid #000000 !important;
+            background-color: #FFFFFF !important;
+            color: #000000 !important;
+        }
+        
+        .stTabs [data-baseweb="tab"][aria-selected="true"] {
+            background-color: #000000 !important;
+            color: #FFFFFF !important;
+        }
+    }
+    
+    /* Reduced motion support */
+    @media (prefers-reduced-motion: reduce) {
+        * {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+        }
+        
+        .stSpinner > div {
+            animation: none !important;
+        }
+    }
+    
+    /* Enhanced text readability */
+    .stMarkdown p, .stMarkdown li, .stText {
+        line-height: 1.6 !important;
+        font-size: 16px !important;
+    }
+    
+    /* Better spacing for touch targets */
+    .stButton > button {
+        min-height: 44px !important;
+        min-width: 44px !important;
+        padding: 12px 24px !important;
+    }
+    
+    .stCheckbox > label {
+        min-height: 44px !important;
+        display: flex !important;
+        align-items: center !important;
+    }
+    
+    .stRadio > div > label {
+        min-height: 44px !important;
+        display: flex !important;
+        align-items: center !important;
+    }
+    
+    /* Screen reader improvements */
+    .sr-only {
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        padding: 0 !important;
+        margin: -1px !important;
+        overflow: hidden !important;
+        clip: rect(0, 0, 0, 0) !important;
+        white-space: nowrap !important;
+        border: 0 !important;
+    }
+    
+    /* Skip links */
+    .skip-link {
+        position: absolute;
+        left: -9999px;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+    }
+    
+    .skip-link:focus {
+        position: absolute !important;
+        left: 6px !important;
+        top: 7px !important;
+        width: auto !important;
+        height: auto !important;
+        padding: 8px 16px !important;
+        background: #000000 !important;
+        color: #FFFFFF !important;
+        text-decoration: none !important;
+        border-radius: 4px !important;
+        z-index: 9999 !important;
+        font-size: 16px !important;
+        font-weight: bold !important;
+    }
+    
+    /* Error and success message accessibility */
+    .stAlert {
+        border-left: 4px solid !important;
+        padding: 16px !important;
+        margin: 16px 0 !important;
+    }
+    
+    .stAlert[data-baseweb="notification"] {
+        role: alert !important;
+    }
+    
+    /* Progress indicators */
+    .stProgress > div {
+        background-color: #E0E0E0 !important;
+        border-radius: 4px !important;
+    }
+    
+    .stProgress > div > div {
+        background-color: #2196F3 !important;
+        border-radius: 4px !important;
+    }
+    
+    /* Tab accessibility */
+    .stTabs [data-baseweb="tab-list"] {
+        role: tablist !important;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        role: tab !important;
+        cursor: pointer !important;
+        border-radius: 4px 4px 0 0 !important;
+        padding: 12px 16px !important;
+        margin-right: 2px !important;
+    }
+    
+    .stTabs [data-baseweb="tab"]:focus {
+        outline: 3px solid #005FCC !important;
+        outline-offset: 2px !important;
+    }
+    
+    /* Form validation styling */
+    .form-error {
+        color: #D32F2F !important;
+        font-size: 14px !important;
+        margin-top: 4px !important;
+        display: flex !important;
+        align-items: center !important;
+    }
+    
+    .form-error::before {
+        content: "⚠️" !important;
+        margin-right: 8px !important;
+    }
+    
+    .form-success {
+        color: #388E3C !important;
+        font-size: 14px !important;
+        margin-top: 4px !important;
+        display: flex !important;
+        align-items: center !important;
+    }
+    
+    .form-success::before {
+        content: "✅" !important;
+        margin-right: 8px !important;
+    }
+    
+    /* Loading states */
+    .loading-container {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding: 20px !important;
+    }
+    
+    .loading-text {
+        margin-left: 12px !important;
+        font-size: 16px !important;
+    }
+    
+    /* Responsive design improvements */
+    @media (max-width: 768px) {
+        .stButton > button {
+            width: 100% !important;
+            margin-bottom: 8px !important;
+        }
+        
+        .stColumns > div {
+            margin-bottom: 16px !important;
+        }
+    }
+    
+    /* Color contrast improvements */
+    .stSelectbox > div > div {
+        background-color: #FFFFFF !important;
+        border: 2px solid #CCCCCC !important;
+    }
+    
+    .stTextInput > div > div > input,
+    .stTextArea > div > div > textarea {
+        background-color: #FFFFFF !important;
+        border: 2px solid #CCCCCC !important;
+        color: #000000 !important;
+    }
+    
+    .stTextInput > div > div > input::placeholder,
+    .stTextArea > div > div > textarea::placeholder {
+        color: #666666 !important;
+    }
+    
+    /* Sidebar accessibility */
+    .css-1d391kg {
+        background-color: #F5F5F5 !important;
+        border-right: 2px solid #E0E0E0 !important;
+    }
+    
+    /* Main content area */
+    .main .block-container {
+        padding-top: 2rem !important;
+        padding-bottom: 2rem !important;
+    }
+    </style>
+    """
+    
+    st.markdown(enhanced_styles, unsafe_allow_html=True)
+    
+    # Add skip navigation links
+    skip_links = """
+    <div class="skip-links">
+        <a href="#main-content" class="skip-link">Skip to main content</a>
+        <a href="#navigation" class="skip-link">Skip to navigation</a>
+        <a href="#sidebar" class="skip-link">Skip to sidebar</a>
+    </div>
+    """
+    st.markdown(skip_links, unsafe_allow_html=True)
+    
+    # Add keyboard navigation JavaScript
+    keyboard_nav_js = """
+    <script>
+    // Enhanced keyboard navigation
+    document.addEventListener('keydown', function(event) {
+        // Alt + 1: Focus on main content
+        if (event.altKey && event.key === '1') {
+            const mainContent = document.querySelector('[data-testid="stAppViewContainer"]');
+            if (mainContent) {
+                mainContent.focus();
+                mainContent.scrollIntoView();
+                event.preventDefault();
+            }
+        }
+        
+        // Alt + 2: Focus on sidebar
+        if (event.altKey && event.key === '2') {
+            const sidebar = document.querySelector('.css-1d391kg');
+            if (sidebar) {
+                const firstButton = sidebar.querySelector('button, input, select, textarea, a[href]');
+                if (firstButton) {
+                    firstButton.focus();
+                    event.preventDefault();
+                }
+            }
+        }
+        
+        // Alt + 3: Focus on first interactive element
+        if (event.altKey && event.key === '3') {
+            const firstInteractive = document.querySelector('button, input, select, textarea, a[href]');
+            if (firstInteractive) {
+                firstInteractive.focus();
+                event.preventDefault();
+            }
+        }
+        
+        // Escape: Close any open dropdowns or modals
+        if (event.key === 'Escape') {
+            const openDropdowns = document.querySelectorAll('[aria-expanded="true"]');
+            openDropdowns.forEach(element => {
+                element.setAttribute('aria-expanded', 'false');
+            });
+        }
+        
+        // Tab navigation improvements
+        if (event.key === 'Tab') {
+            // Ensure focus is visible
+            setTimeout(() => {
+                const focused = document.activeElement;
+                if (focused && focused.tagName) {
+                    focused.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 10);
+        }
+    });
+    
+    // Announce page changes to screen readers
+    function announcePageChange(message) {
+        const announcement = document.createElement('div');
+        announcement.setAttribute('aria-live', 'polite');
+        announcement.setAttribute('aria-atomic', 'true');
+        announcement.className = 'sr-only';
+        announcement.textContent = message;
+        document.body.appendChild(announcement);
+        
+        setTimeout(() => {
+            if (document.body.contains(announcement)) {
+                document.body.removeChild(announcement);
+            }
+        }, 1000);
+    }
+    
+    // Monitor for Streamlit updates
+    const observer = new MutationObserver(function(mutations) {
+        let hasSignificantChange = false;
+        
+        mutations.forEach(function(mutation) {
+            if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                const hasMainContent = Array.from(mutation.addedNodes).some(node => 
+                    node.nodeType === 1 && (
+                        node.querySelector && (
+                            node.querySelector('[data-testid="stAppViewContainer"]') ||
+                            node.querySelector('.stAlert') ||
+                            node.querySelector('.stSuccess') ||
+                            node.querySelector('.stError')
+                        )
+                    )
+                );
+                
+                if (hasMainContent) {
+                    hasSignificantChange = true;
+                }
+            }
+        });
+        
+        if (hasSignificantChange) {
+            announcePageChange('Page content updated');
+        }
+    });
+    
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+    
+    // Add ARIA labels to Streamlit elements
+    function enhanceStreamlitAccessibility() {
+        // Add labels to buttons without proper labels
+        const buttons = document.querySelectorAll('button:not([aria-label]):not([aria-labelledby])');
+        buttons.forEach(button => {
+            if (button.textContent.trim()) {
+                button.setAttribute('aria-label', button.textContent.trim());
+            }
+        });
+        
+        // Add labels to input fields
+        const inputs = document.querySelectorAll('input:not([aria-label]):not([aria-labelledby])');
+        inputs.forEach(input => {
+            const label = input.closest('.stTextInput, .stNumberInput')?.querySelector('label');
+            if (label && label.textContent.trim()) {
+                input.setAttribute('aria-label', label.textContent.trim());
+            }
+        });
+        
+        // Add role attributes to tabs
+        const tabs = document.querySelectorAll('[data-baseweb="tab"]');
+        tabs.forEach((tab, index) => {
+            tab.setAttribute('role', 'tab');
+            tab.setAttribute('tabindex', tab.getAttribute('aria-selected') === 'true' ? '0' : '-1');
+        });
+        
+        const tabList = document.querySelector('[data-baseweb="tab-list"]');
+        if (tabList) {
+            tabList.setAttribute('role', 'tablist');
+        }
+    }
+    
+    // Run accessibility enhancements periodically
+    setInterval(enhanceStreamlitAccessibility, 1000);
+    
+    // Initial run
+    setTimeout(enhanceStreamlitAccessibility, 500);
+    </script>
+    """
+    st.markdown(keyboard_nav_js, unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

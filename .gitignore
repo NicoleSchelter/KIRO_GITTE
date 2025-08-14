@@ -85,6 +85,9 @@ models/
 *.safetensors
 *.ckpt
 
+# RepKopie
+*.zip
+
 # Generated content
 generated_images/
 exports/

@@ -12,6 +12,11 @@ from config.config import get_text
 from src.data.models import ConsentType
 from src.logic.consent import ConsentError
 from src.services.consent_service import get_consent_service
+from src.ui.tooltip_integration import (
+    get_tooltip_integration,
+    consent_checkbox,
+    tooltip_button
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +26,7 @@ class ConsentUI:
 
     def __init__(self):
         self.consent_service = get_consent_service()
+        self.tooltip_integration = get_tooltip_integration()
 
     def render_consent_gate(self, user_id: UUID, operation: str) -> bool:
         """
@@ -60,7 +66,7 @@ class ConsentUI:
                     st.write(f"- {self._get_consent_display_name(consent_type)}")
 
             # Provide link to consent management
-            if st.button("Manage Consent Settings"):
+            if tooltip_button("Manage Consent Settings", "consent_settings_button"):
                 st.session_state.show_consent_ui = True
                 st.rerun()
 
@@ -99,16 +105,26 @@ class ConsentUI:
             # Render consent checkboxes
             for consent_type in consent_types:
                 display_name = self._get_consent_display_name(consent_type)
-                description = self._get_consent_description(consent_type)
-
                 current_value = current_status.get(consent_type.value, False)
 
-                # Create checkbox with description
-                consent_values[consent_type] = st.checkbox(
+                # Map consent type to tooltip ID
+                tooltip_id_map = {
+                    ConsentType.DATA_PROCESSING: "data_processing_consent",
+                    ConsentType.AI_INTERACTION: "llm_interaction_consent", 
+                    ConsentType.IMAGE_GENERATION: "image_generation_consent",
+                    ConsentType.ANALYTICS: "analytics_consent"
+                }
+                
+                tooltip_id = tooltip_id_map.get(consent_type, "data_processing_consent")
+
+                # Create checkbox with tooltip
+                consent_values[consent_type] = consent_checkbox(
                     display_name,
+                    tooltip_id,
+                    user_id=user_id,
+                    consent_type=consent_type.value,
                     value=current_value,
-                    help=description,
-                    key=f"consent_{consent_type.value}",
+                    key=f"consent_{consent_type.value}"
                 )
 
             return consent_values
@@ -139,15 +155,15 @@ class ConsentUI:
             col1, col2, col3 = st.columns(3)
 
             with col1:
-                if st.button("Save Consent Preferences", type="primary"):
+                if tooltip_button("Save Consent Preferences", "save_button", type="primary"):
                     self._save_consent_preferences(user_id, consent_values)
 
             with col2:
-                if st.button("Withdraw All Consent"):
+                if tooltip_button("Withdraw All Consent", "delete_button"):
                     self._withdraw_all_consent(user_id)
 
             with col3:
-                if st.button("Export My Data"):
+                if tooltip_button("Export My Data", "export_button"):
                     self._export_user_data(user_id)
 
             # Show consent history
@@ -201,15 +217,24 @@ class ConsentUI:
             essential_consents = [ConsentType.DATA_PROCESSING, ConsentType.AI_INTERACTION]
             essential_values = {}
 
+            tooltip_id_map = {
+                ConsentType.DATA_PROCESSING: "data_processing_consent",
+                ConsentType.AI_INTERACTION: "llm_interaction_consent", 
+                ConsentType.IMAGE_GENERATION: "image_generation_consent",
+                ConsentType.ANALYTICS: "analytics_consent"
+            }
+
             for consent_type in essential_consents:
                 display_name = self._get_consent_display_name(consent_type)
-                description = self._get_consent_description(consent_type)
+                tooltip_id = tooltip_id_map.get(consent_type, "data_processing_consent")
 
-                essential_values[consent_type] = st.checkbox(
+                essential_values[consent_type] = consent_checkbox(
                     display_name,
+                    tooltip_id,
+                    user_id=user_id,
+                    consent_type=consent_type.value,
                     value=False,
-                    help=description,
-                    key=f"essential_{consent_type.value}",
+                    key=f"essential_{consent_type.value}"
                 )
 
             # Optional consents
@@ -223,13 +248,15 @@ class ConsentUI:
 
             for consent_type in optional_consents:
                 display_name = self._get_consent_display_name(consent_type)
-                description = self._get_consent_description(consent_type)
+                tooltip_id = tooltip_id_map.get(consent_type, "analytics_consent")
 
-                optional_values[consent_type] = st.checkbox(
+                optional_values[consent_type] = consent_checkbox(
                     display_name,
+                    tooltip_id,
+                    user_id=user_id,
+                    consent_type=consent_type.value,
                     value=True,  # Default to True for optional consents
-                    help=description,
-                    key=f"optional_{consent_type.value}",
+                    key=f"optional_{consent_type.value}"
                 )
 
             # Check if essential consents are given
@@ -239,8 +266,12 @@ class ConsentUI:
                 st.warning("Essential consents are required to use GITTE.")
 
             # Save consent button
-            if st.button(
-                "Continue with These Settings", type="primary", disabled=not essential_given
+            if tooltip_button(
+                "Continue with These Settings", 
+                "register_submit_button",
+                disabled=not essential_given,
+                context={"reason": "Essential consents required"} if not essential_given else None,
+                type="primary"
             ):
                 all_consents = {**essential_values, **optional_values}
 

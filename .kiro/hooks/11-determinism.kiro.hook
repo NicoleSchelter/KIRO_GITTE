@@ -1,0 +1,16 @@
+{
+    "enabled": true,
+    "name": "Determinism",
+    "description": "Require deterministic seeds; ban direct Date/time/random use in src",
+    "version": "1",
+    "when": { "type": "beforeCommit" },
+    "then": {
+      "type": "runCommands",
+      "shell": "bash",
+      "commands": [
+        "bash -lc 'grep -R -nE \"(^|[^a-zA-Z_])(random\\.random\\(|random\\.rand|numpy\\.random|time\\.time\\()\" src && { echo \"❌ Direkte Zufalls-/Zeitverwendung in src – bitte über Clock/RNG-Interface\"; exit 1; } || true'",
+        "bash -lc 'grep -R -nE \"HYPOTHESIS_PROFILE|@given\\(\" tests >/dev/null 2>&1 || { echo \"❌ Keine Hypothesis-Property-Tests/Profil gefunden\"; exit 1; }'"
+      ]
+    }
+  }
+  

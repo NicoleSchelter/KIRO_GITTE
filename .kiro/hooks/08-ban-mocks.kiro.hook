@@ -1,0 +1,15 @@
+{
+    "enabled": true,
+    "name": "Ban Mocks",
+    "description": "Disallow unittest.mock/pytest-mock/monkeypatch/responses",
+    "version": "1",
+    "when": { "type": "beforeCommit" },
+    "then": {
+      "type": "runCommands",
+      "shell": "bash",
+      "commands": [
+        "bash -lc '(! grep -R -nE \"from\\s+unittest\\s+import\\s+mock|import\\s+unittest\\.mock|pytest\\.monkeypatch|from\\s+pytest\\s+import\\s+MonkeyPatch|import\\s+responses|import\\s+requests_mock\" tests src || { echo \"❌ Mocking/Patching-Bibliotheken sind verboten\"; exit 1; })'"
+      ]
+    }
+  }
+  

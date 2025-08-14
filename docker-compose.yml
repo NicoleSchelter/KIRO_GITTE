@@ -12,6 +12,32 @@ services:
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
+      - REDIS_URL=redis://redis:6379/0
+      # UX Enhancement Configuration
+      - UX_FEATURES_ENABLED=true
+      - IMAGE_CORRECTION_ENABLED=true
+      - TOOLTIP_SYSTEM_ENABLED=true
+      - PREREQUISITE_VALIDATION_ENABLED=true
+      - ACCESSIBILITY_FEATURES_ENABLED=true
+      - PERFORMANCE_MONITORING_ENABLED=true
+      - LAZY_LOADING_ENABLED=true
+      - CACHING_ENABLED=true
+      # Performance Configuration
+      - CACHE_TTL_SECONDS=3600
+      - MAX_CACHE_SIZE_MB=512
+      - LAZY_LOADING_TIMEOUT_SECONDS=30
+      - PREREQUISITE_CACHE_TTL_SECONDS=300
+      - TOOLTIP_CACHE_TTL_SECONDS=1800
+      # Image Processing Configuration
+      - IMAGE_QUALITY_THRESHOLD=0.6
+      - MAX_IMAGE_SIZE_MB=10
+      - SUPPORTED_IMAGE_FORMATS=png,jpg,jpeg,gif
+      - BACKGROUND_REMOVAL_ENABLED=true
+      # Accessibility Configuration
+      - WCAG_COMPLIANCE_LEVEL=AA
+      - HIGH_CONTRAST_ENABLED=true
+      - KEYBOARD_NAVIGATION_ENABLED=true
+      - SCREEN_READER_SUPPORT_ENABLED=true
     volumes:
       - ./config:/app/config
       - ./generated_images:/app/generated_images
@@ -20,6 +46,7 @@ services:
       - postgres
       - ollama
       - minio
+      - redis
     networks:
       - gitte-network
 
@@ -67,10 +94,62 @@ services:
     networks:
       - gitte-network
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - gitte-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Monitoring and Metrics (optional for development)
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - gitte-network
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana:/etc/grafana/provisioning
+    networks:
+      - gitte-network
+    profiles:
+      - monitoring
+
 volumes:
   postgres_data:
   ollama_data:
   minio_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
 
 networks:
   gitte-network:

@@ -21,6 +21,14 @@ from src.logic.authentication import (
     UserAlreadyExistsError,
 )
 from src.services.session_manager import get_session_manager
+from src.ui.tooltip_integration import (
+    get_tooltip_integration,
+    tooltip_input,
+    tooltip_button,
+    tooltip_checkbox,
+    tooltip_selectbox,
+    form_submit_button
+)
 
 logger = logging.getLogger(__name__)
 
@@ -32,50 +40,106 @@ class AuthenticationUI:
         self.auth_logic = AuthenticationLogic(
             user_repository=get_user_repository(), session_manager=get_session_manager()
         )
+        self.tooltip_integration = get_tooltip_integration()
 
     def render_login_page(self) -> dict[str, Any] | None:
         """
-        Render login page.
+        Render login page with enhanced accessibility.
 
         Returns:
             Dict with user and session info if login successful, None otherwise
         """
+        # Add page structure for screen readers
+        st.markdown('<main role="main" id="main-content">', unsafe_allow_html=True)
+        
         st.title(get_text("login_title"))
+        
+        # Add login instructions for screen readers
+        st.markdown(
+            """
+            <div class="sr-only">
+                Login form. Enter your username and password to access the GITTE learning system.
+                If you don't have an account, you can register for a new one.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
         with st.form("login_form"):
             st.subheader("Sign In")
 
-            username = st.text_input(
+            # Enhanced username input with better accessibility
+            username = tooltip_input(
                 "Username",
+                "username_input",
                 placeholder="Enter your username",
-                help="The username you registered with",
+                help="Enter the username you created when registering"
             )
 
+            # Enhanced password input with accessibility features
             password = st.text_input(
                 "Password",
                 type="password",
                 placeholder="Enter your password",
-                help="Your account password",
+                help=self.tooltip_integration.tooltip_manager.get_tooltip_for_element("password_input") or "Enter your account password"
+            )
+            
+            # Add password visibility toggle (conceptual - would need custom implementation)
+            st.markdown(
+                """
+                <div class="form-help">
+                    <small>Password is hidden for security. Make sure you're in a private location.</small>
+                </div>
+                """,
+                unsafe_allow_html=True
             )
 
             col1, col2 = st.columns(2)
 
             with col1:
-                login_submitted = st.form_submit_button("Sign In", type="primary")
+                login_submitted = st.form_submit_button(
+                    "🔑 Sign In", 
+                    type="primary",
+                    help=self.tooltip_integration.tooltip_manager.get_tooltip_for_element("login_button") or "Sign in to your GITTE account"
+                )
 
             with col2:
-                if st.form_submit_button("New User? Register"):
+                if st.form_submit_button("👤 New User? Register"):
                     st.session_state.show_registration = True
                     st.rerun()
+            
+            # Add keyboard shortcuts info
+            st.markdown(
+                """
+                <div class="form-help">
+                    <small>💡 <strong>Tip:</strong> Press Tab to navigate between fields, Enter to submit</small>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        # Close main content area
+        st.markdown('</main>', unsafe_allow_html=True)
 
         if login_submitted:
             if not username or not password:
-                st.error("Please enter both username and password.")
+                st.error("⚠️ Please enter both username and password.")
+                # Announce error to screen readers
+                st.markdown(
+                    """
+                    <div aria-live="polite" class="sr-only">
+                        Login error: Please enter both username and password
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
                 return None
 
             try:
-                login_data = UserLogin(username=username, password=password)
-                result = self.auth_logic.login_user(login_data)
+                # Show loading state with accessibility
+                with st.spinner("🔐 Signing you in..."):
+                    login_data = UserLogin(username=username, password=password)
+                    result = self.auth_logic.login_user(login_data)
 
                 # Store session info
                 st.session_state.user_id = result["user"].id
@@ -84,21 +148,64 @@ class AuthenticationUI:
                 st.session_state.session_id = result["session"]["session_id"]
                 st.session_state.authenticated = True
 
-                st.success(f"Welcome back, {result['user'].username}!")
+                st.success(f"✅ Welcome back, {result['user'].username}!")
+                
+                # Announce success to screen readers
+                st.markdown(
+                    f"""
+                    <div aria-live="polite" class="sr-only">
+                        Login successful. Welcome back, {result['user'].username}. Redirecting to main application.
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+                
                 st.balloons()
 
                 logger.info(f"User logged in successfully: {username}")
                 return result
 
             except InvalidCredentialsError:
-                st.error(get_text("error_auth_failed"))
+                st.error(f"❌ {get_text('error_auth_failed')}")
+                st.markdown(
+                    """
+                    <div aria-live="assertive" class="sr-only">
+                        Login failed: Invalid username or password
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
             except InactiveUserError:
-                st.error("Your account is inactive. Please contact support.")
+                st.error("❌ Your account is inactive. Please contact support.")
+                st.markdown(
+                    """
+                    <div aria-live="assertive" class="sr-only">
+                        Login failed: Account is inactive
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
             except AuthenticationError as e:
-                st.error(f"Login failed: {str(e)}")
+                st.error(f"❌ Login failed: {str(e)}")
+                st.markdown(
+                    f"""
+                    <div aria-live="assertive" class="sr-only">
+                        Login failed: {str(e)}
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
             except Exception as e:
                 logger.error(f"Unexpected login error: {e}")
-                st.error(get_text("error_generic"))
+                st.error(f"❌ {get_text('error_generic')}")
+                st.markdown(
+                    """
+                    <div aria-live="assertive" class="sr-only">
+                        Login failed: An unexpected error occurred
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
 
         return None
 
@@ -114,41 +221,66 @@ class AuthenticationUI:
         with st.form("registration_form"):
             st.subheader("Create New Account")
 
-            username = st.text_input(
+            username = tooltip_input(
                 "Username",
-                placeholder="Choose a username",
-                help="Must be unique and at least 3 characters long",
+                "username_input",
+                placeholder="Choose a username"
             )
 
-            password = st.text_input(
+            password = tooltip_input(
                 "Password",
+                "password_input",
                 type="password",
-                placeholder="Choose a strong password",
-                help="At least 8 characters recommended",
+                placeholder="Choose a strong password"
             )
 
-            confirm_password = st.text_input(
-                "Confirm Password", type="password", placeholder="Re-enter your password"
+            confirm_password = tooltip_input(
+                "Confirm Password",
+                "confirm_password_input",
+                type="password",
+                placeholder="Re-enter your password"
             )
 
-            role = st.selectbox(
+            role = tooltip_selectbox(
                 "Account Type",
+                "role_select",
                 options=[UserRole.PARTICIPANT.value, UserRole.ADMIN.value],
-                index=0,
-                help="Participant: Regular user access, Admin: Administrative privileges",
+                index=0
             )
 
             # Terms and conditions
-            terms_accepted = st.checkbox(
+            terms_accepted = tooltip_checkbox(
                 "I accept the Terms of Service and Privacy Policy",
-                help="You must accept the terms to create an account",
+                "terms_checkbox"
             )
 
             col1, col2 = st.columns(2)
 
             with col1:
-                register_submitted = st.form_submit_button(
-                    "Create Account", type="primary", disabled=not terms_accepted
+                # Validate form
+                form_valid = (
+                    username and len(username) >= 3 and
+                    password and len(password) >= 8 and
+                    confirm_password and password == confirm_password and
+                    terms_accepted
+                )
+                
+                validation_errors = []
+                if username and len(username) < 3:
+                    validation_errors.append("Username too short")
+                if password and len(password) < 8:
+                    validation_errors.append("Password too short")
+                if confirm_password and password != confirm_password:
+                    validation_errors.append("Passwords don't match")
+                if not terms_accepted:
+                    validation_errors.append("Must accept terms")
+
+                register_submitted = form_submit_button(
+                    "Create Account",
+                    "register_submit_button",
+                    form_valid=form_valid,
+                    validation_errors=validation_errors,
+                    type="primary"
                 )
 
             with col2:

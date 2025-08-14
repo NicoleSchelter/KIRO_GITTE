@@ -55,6 +55,26 @@ class ImageGenerationConfig:
 
 
 @dataclass
+class ImageIsolationConfig:
+    """Image isolation and quality detection configuration."""
+
+    enabled: bool = True
+    detection_confidence_threshold: float = 0.7
+    edge_refinement_enabled: bool = True
+    background_removal_method: str = "rembg"  # rembg, opencv, transparent, uniform
+    fallback_to_original: bool = True
+    max_processing_time: int = 10  # seconds
+    output_format: str = "PNG"  # PNG for transparency support
+    uniform_background_color: tuple = (255, 255, 255)
+
+    def __post_init__(self):
+        if env_enabled := os.getenv("IMAGE_ISOLATION_ENABLED"):
+            self.enabled = env_enabled.lower() == "true"
+        if env_threshold := os.getenv("IMAGE_ISOLATION_CONFIDENCE_THRESHOLD"):
+            self.detection_confidence_threshold = float(env_threshold)
+
+
+@dataclass
 class StorageConfig:
     """Storage configuration for MinIO and local filesystem."""
 
@@ -109,6 +129,84 @@ class FederatedLearningConfig:
 
 
 @dataclass
+class ImageCorrectionConfig:
+    """Image correction dialog configuration."""
+
+    enabled: bool = True
+    auto_show_dialog: bool = True
+    timeout_seconds: int = 300  # 5 minutes
+    allow_manual_crop: bool = True
+    allow_regeneration: bool = True
+    save_correction_history: bool = True
+    learning_from_corrections: bool = True
+
+    def __post_init__(self):
+        if env_enabled := os.getenv("IMAGE_CORRECTION_ENABLED"):
+            self.enabled = env_enabled.lower() == "true"
+        if env_timeout := os.getenv("IMAGE_CORRECTION_TIMEOUT"):
+            self.timeout_seconds = int(env_timeout)
+
+
+@dataclass
+class TooltipConfig:
+    """Tooltip system configuration."""
+
+    enabled: bool = True
+    show_delay_ms: int = 500
+    hide_delay_ms: int = 200
+    max_width: int = 300
+    position: str = "auto"  # auto, top, bottom, left, right
+    theme: str = "default"
+    track_interactions: bool = True
+    accessibility_mode: bool = False
+
+    def __post_init__(self):
+        if env_enabled := os.getenv("TOOLTIP_ENABLED"):
+            self.enabled = env_enabled.lower() == "true"
+        if env_delay := os.getenv("TOOLTIP_SHOW_DELAY"):
+            self.show_delay_ms = int(env_delay)
+
+
+@dataclass
+class PrerequisiteConfig:
+    """Prerequisite checking configuration."""
+
+    enabled: bool = True
+    cache_ttl_seconds: int = 300  # 5 minutes
+    parallel_execution: bool = True
+    timeout_seconds: int = 30
+    retry_attempts: int = 2
+    fail_on_required: bool = True
+    warn_on_recommended: bool = True
+    ignore_optional: bool = False
+
+    def __post_init__(self):
+        if env_enabled := os.getenv("PREREQUISITE_CHECKS_ENABLED"):
+            self.enabled = env_enabled.lower() == "true"
+        if env_cache_ttl := os.getenv("PREREQUISITE_CACHE_TTL"):
+            self.cache_ttl_seconds = int(env_cache_ttl)
+
+
+@dataclass
+class UXAuditConfig:
+    """UX audit logging configuration."""
+
+    enabled: bool = True
+    log_tooltip_interactions: bool = True
+    log_correction_actions: bool = True
+    log_prerequisite_checks: bool = True
+    log_workflow_events: bool = True
+    retention_days: int = 90
+    anonymize_data: bool = False
+
+    def __post_init__(self):
+        if env_enabled := os.getenv("UX_AUDIT_ENABLED"):
+            self.enabled = env_enabled.lower() == "true"
+        if env_retention := os.getenv("UX_AUDIT_RETENTION_DAYS"):
+            self.retention_days = int(env_retention)
+
+
+@dataclass
 class FeatureFlags:
     """Feature flags for controlling system behavior."""
 
@@ -117,10 +215,16 @@ class FeatureFlags:
     enable_consistency_check: bool = False
     use_langchain: bool = False
     enable_image_generation: bool = True
+    enable_image_isolation: bool = True
+    enable_image_quality_detection: bool = True
+    enable_image_correction_dialog: bool = True
     enable_minio_storage: bool = True
     enable_audit_logging: bool = True
     enable_pald_evolution: bool = True
     enable_consent_gate: bool = True
+    enable_tooltip_system: bool = True
+    enable_prerequisite_checks: bool = True
+    enable_ux_audit_logging: bool = True
 
     def __post_init__(self):
         """Override feature flags from environment variables."""
@@ -142,6 +246,11 @@ class Config:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     image_generation: ImageGenerationConfig = field(default_factory=ImageGenerationConfig)
+    image_isolation: ImageIsolationConfig = field(default_factory=ImageIsolationConfig)
+    image_correction: ImageCorrectionConfig = field(default_factory=ImageCorrectionConfig)
+    tooltip: TooltipConfig = field(default_factory=TooltipConfig)
+    prerequisite: PrerequisiteConfig = field(default_factory=PrerequisiteConfig)
+    ux_audit: UXAuditConfig = field(default_factory=UXAuditConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     federated_learning: FederatedLearningConfig = field(default_factory=FederatedLearningConfig)

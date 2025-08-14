@@ -1,0 +1,321 @@
+{
+  "audit_summary": {
+    "timestamp": "2025-08-14 12:18:35",
+    "overall_score": "97.8%",
+    "grade": "A+ (Excellent)"
+  },
+  "detailed_results": {
+    "timestamp": 1755166715.2894583,
+    "overall_score": 0.9777777777777776,
+    "wcag_compliance": {
+      "perceivable": {
+        "contrast_minimum": {
+          "passed": true,
+          "details": "Primary text colors meet 4.5:1 contrast ratio"
+        },
+        "resize_text": {
+          "passed": true,
+          "details": "CSS includes responsive text sizing and zoom support"
+        },
+        "reflow": {
+          "passed": true,
+          "details": "Responsive design supports content reflow"
+        },
+        "non_text_contrast": {
+          "passed": true,
+          "details": "Focus indicators and UI elements meet contrast requirements"
+        },
+        "text_spacing": {
+          "passed": true,
+          "details": "Text spacing is optimized for readability"
+        }
+      },
+      "operable": {
+        "keyboard_accessible": {
+          "passed": true,
+          "details": "Keyboard event handlers are implemented"
+        },
+        "no_keyboard_trap": {
+          "passed": true,
+          "details": "Escape key handling prevents keyboard traps"
+        },
+        "focus_order": {
+          "passed": true,
+          "details": "DOM order provides logical focus sequence"
+        },
+        "focus_visible": {
+          "passed": true,
+          "details": "Visible focus indicators are implemented"
+        },
+        "target_size": {
+          "passed": false,
+          "details": "Interactive elements meet 44px minimum size"
+        }
+      },
+      "understandable": {
+        "page_language": {
+          "passed": true,
+          "details": "Page language is declared in HTML"
+        },
+        "on_focus": {
+          "passed": true,
+          "details": "Focus events don't trigger unexpected context changes"
+        },
+        "on_input": {
+          "passed": true,
+          "details": "Input events don't trigger unexpected context changes"
+        },
+        "error_identification": {
+          "passed": true,
+          "details": "Form errors are clearly identified with ARIA alerts"
+        },
+        "labels_instructions": {
+          "passed": true,
+          "details": "Form fields have proper labels and instructions"
+        }
+      },
+      "robust": {
+        "parsing": {
+          "passed": true,
+          "details": "HTML structure is valid and parseable"
+        },
+        "name_role_value": {
+          "passed": true,
+          "details": "UI components have proper name, role, and value attributes"
+        },
+        "status_messages": {
+          "passed": true,
+          "details": "Status messages use ARIA live regions"
+        }
+      },
+      "score": 0.9444444444444444
+    },
+    "color_contrast": {
+      "primary_on_white": {
+        "foreground": "#0066CC",
+        "background": "#FFFFFF",
+        "ratio": 5.566637067604819,
+        "aa_normal": true,
+        "aa_large": true,
+        "passed": true
+      },
+      "secondary_on_white": {
+        "foreground": "#6C757D",
+        "background": "#FFFFFF",
+        "ratio": 4.689301797380369,
+        "aa_normal": true,
+        "aa_large": true,
+        "passed": true
+      },
+      "success_on_white": {
+        "foreground": "#1B7332",
+        "background": "#FFFFFF",
+        "ratio": 5.923913765528398,
+        "aa_normal": true,
+        "aa_large": true,
+        "passed": true
+      },
+      "warning_on_white": {
+        "foreground": "#856404",
+        "background": "#FFFFFF",
+        "ratio": 5.494604937715777,
+        "aa_normal": true,
+        "aa_large": true,
+        "passed": true
+      },
+      "danger_on_white": {
+        "foreground": "#C82333",
+        "background": "#FFFFFF",
+        "ratio": 5.60884249963459,
+        "aa_normal": true,
+        "aa_large": true,
+        "passed": true
+      },
+      "info_on_white": {
+        "foreground": "#0F6674",
+        "background": "#FFFFFF",
+        "ratio": 6.618236036119617,
+        "aa_normal": true,
+        "aa_large": true,
+        "passed": true
+      },
+      "dark_on_white": {
+        "foreground": "#343A40",
+        "background": "#FFFFFF",
+        "ratio": 11.505157433045612,
+        "aa_normal": true,
+        "aa_large": true,
+        "passed": true
+      },
+      "black_on_white": {
+        "foreground": "#000000",
+        "background": "#FFFFFF",
+        "ratio": 21.0,
+        "aa_normal": true,
+        "aa_large": true,
+        "passed": true
+      },
+      "high_contrast_primary_on_white": {
+        "foreground": "#0000FF",
+        "background": "#FFFFFF",
+        "ratio": 8.592471358428805,
+        "aa_normal": true,
+        "aaa_normal": true,
+        "passed": true
+      },
+      "high_contrast_secondary_on_white": {
+        "foreground": "#000000",
+        "background": "#FFFFFF",
+        "ratio": 21.0,
+        "aa_normal": true,
+        "aaa_normal": true,
+        "passed": true
+      },
+      "high_contrast_success_on_white": {
+        "foreground": "#006400",
+        "background": "#FFFFFF",
+        "ratio": 7.439241111579327,
+        "aa_normal": true,
+        "aaa_normal": true,
+        "passed": true
+      },
+      "high_contrast_warning_on_white": {
+        "foreground": "#5A4D00",
+        "background": "#FFFFFF",
+        "ratio": 8.412508622331712,
+        "aa_normal": true,
+        "aaa_normal": true,
+        "passed": true
+      },
+      "high_contrast_danger_on_white": {
+        "foreground": "#8B0000",
+        "background": "#FFFFFF",
+        "ratio": 10.010518239222488,
+        "aa_normal": true,
+        "aaa_normal": true,
+        "passed": true
+      },
+      "high_contrast_info_on_white": {
+        "foreground": "#004D4D",
+        "background": "#FFFFFF",
+        "ratio": 9.683152160878612,
+        "aa_normal": true,
+        "aaa_normal": true,
+        "passed": true
+      },
+      "high_contrast_dark_on_white": {
+        "foreground": "#000000",
+        "background": "#FFFFFF",
+        "ratio": 21.0,
+        "aa_normal": true,
+        "aaa_normal": true,
+        "passed": true
+      },
+      "high_contrast_black_on_white": {
+        "foreground": "#000000",
+        "background": "#FFFFFF",
+        "ratio": 21.0,
+        "aa_normal": true,
+        "aaa_normal": true,
+        "passed": true
+      }
+    },
+    "keyboard_navigation": {
+      "keyboard_shortcuts_implemented": {
+        "passed": true,
+        "details": "Essential keyboard shortcuts are implemented"
+      },
+      "focus_management": {
+        "passed": true,
+        "details": "Focus management functions are implemented"
+      },
+      "tab_navigation": {
+        "passed": true,
+        "details": "Tab navigation enhancements are implemented"
+      },
+      "escape_functionality": {
+        "passed": true,
+        "details": "Escape key closes modals and dropdowns"
+      },
+      "arrow_key_navigation": {
+        "passed": true,
+        "details": "Arrow key navigation for tab-like interfaces"
+      }
+    },
+    "screen_reader": {
+      "aria_live_regions": {
+        "passed": true,
+        "details": "ARIA live regions are properly configured"
+      },
+      "aria_labels": {
+        "passed": true,
+        "details": "ARIA labels are generated correctly"
+      },
+      "semantic_markup": {
+        "passed": true,
+        "details": "Semantic HTML elements are used appropriately"
+      },
+      "skip_links": {
+        "passed": true,
+        "details": "Skip links are implemented for keyboard navigation"
+      },
+      "progress_announcements": {
+        "passed": true,
+        "details": "Progress announcements are formatted correctly"
+      }
+    },
+    "recommendations": [],
+    "errors": [],
+    "form_accessibility": {
+      "basic_field_creation": {
+        "passed": true,
+        "details": "Basic form field creation works"
+      },
+      "required_field": {
+        "passed": true,
+        "details": "Required field indicators work"
+      },
+      "help_text": {
+        "passed": true,
+        "details": "Help text and ARIA describedby work"
+      },
+      "error_handling": {
+        "passed": true,
+        "details": "Error messages with ARIA alerts work"
+      }
+    },
+    "responsive_design": {
+      "mobile_touch_targets": {
+        "passed": true,
+        "details": "Touch targets meet 44px minimum size"
+      },
+      "responsive_text": {
+        "passed": true,
+        "details": "Text scales appropriately across screen sizes"
+      },
+      "reduced_motion": {
+        "passed": true,
+        "details": "Respects user's reduced motion preferences"
+      },
+      "high_contrast": {
+        "passed": true,
+        "details": "Supports high contrast mode"
+      }
+    }
+  },
+  "executive_summary": {
+    "overall_assessment": "The GITTE system demonstrates excellent accessibility compliance with strong WCAG 2.1 AA adherence.",
+    "key_strengths": [
+      "Excellent color contrast compliance",
+      "Comprehensive keyboard navigation support",
+      "Strong screen reader compatibility",
+      "High WCAG 2.1 AA compliance"
+    ],
+    "critical_issues": 0,
+    "improvement_areas": 0,
+    "next_steps": [
+      "Continue monitoring accessibility compliance",
+      "Consider AAA level enhancements"
+    ]
+  }
+}

@@ -11,6 +11,40 @@ GITTE follows a strict 4-layer architecture:
 - **Service Layer** (`src/services/`): External service integration, data transformation, caching
 - **Data Layer** (`src/data/`): Data persistence, schema management, migrations
 
+## ✨ UX Enhancements
+
+GITTE includes advanced user experience enhancements designed to make the system more intuitive, accessible, and efficient:
+
+### 🖼️ Image Correction System
+- **Automatic Quality Detection**: Identifies issues like blur, multiple people, poor lighting
+- **Manual Correction Tools**: Interactive cropping with real-time preview
+- **Smart Regeneration**: AI learns from your corrections to improve future generations
+- **Background Removal**: Isolate subjects with transparent or custom backgrounds
+
+### 💡 Intelligent Tooltips
+- **Context-Sensitive Help**: Dynamic tooltips that adapt to your current task
+- **Skill Level Adaptation**: Detailed help for beginners, concise tips for experts
+- **Accessibility Support**: Enhanced tooltips for screen readers and keyboard navigation
+- **Learning System**: Adapts to your usage patterns over time
+
+### ✅ Prerequisite Validation
+- **Real-Time Checking**: Validates system requirements before operations
+- **User-Friendly Resolution**: Clear error messages with step-by-step fixes
+- **Performance Monitoring**: Tracks system health and performance metrics
+- **Automated Recovery**: Attempts to resolve simple issues automatically
+
+### ♿ Accessibility Features
+- **WCAG 2.1 AA Compliance**: Meets international accessibility standards
+- **High Contrast Mode**: Enhanced visibility for users with visual impairments
+- **Keyboard Navigation**: Full functionality without mouse interaction
+- **Screen Reader Support**: Comprehensive ARIA labels and semantic markup
+
+### ⚡ Performance Optimizations
+- **Lazy Loading**: Resources load only when needed
+- **Multi-Level Caching**: Memory, disk, and network caching for optimal performance
+- **Resource Management**: Intelligent memory and CPU usage optimization
+- **Monitoring**: Real-time performance metrics and alerting
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -193,6 +227,26 @@ Current status:
 - ✅ Docker containerization
 - ✅ Development tooling
 - 🚧 Feature implementation (in progress)
+
+## 📚 Documentation
+
+### User Documentation
+- **[UX Enhancements User Guide](docs/UX_ENHANCEMENTS_USER_GUIDE.md)**: Complete guide to using the new UX features
+- **[API Documentation](docs/api-spec.yaml)**: OpenAPI specification for all endpoints
+- **[Architecture Guide](docs/ARCHITECTURE.md)**: System architecture and design decisions
+- **[Deployment Guide](docs/DEPLOYMENT.md)**: Production deployment instructions
+- **[Operations Guide](docs/OPERATIONS.md)**: System administration and monitoring
+
+### Developer Documentation
+- **[Troubleshooting Guide](docs/UX_ENHANCEMENTS_TROUBLESHOOTING.md)**: Solutions to common issues
+- **[Testing Standards](docs/TESTING.md)**: Testing guidelines and best practices
+- **[Development Workflow](docs/DEVELOPMENT.md)**: Development process and conventions
+
+### Deployment and Operations
+- **[Deployment Validation](scripts/deployment_validation.py)**: Automated deployment testing
+- **[Rollback Procedures](scripts/rollback_procedures.py)**: Safe rollback mechanisms
+- **[Monitoring Configuration](config/prometheus.yml)**: Prometheus monitoring setup
+- **[Alert Rules](config/alert_rules.yml)**: Production alerting configuration
 
 ## 📄 License
 

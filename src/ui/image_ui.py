@@ -32,7 +32,7 @@ class ImageGenerationUI:
         self, user_id: UUID, embodiment_data: dict[str, Any] | None = None
     ) -> str | None:
         """
-        Render the main image generation interface.
+        Render the main image generation interface with enhanced accessibility.
 
         Args:
             user_id: User identifier
@@ -45,7 +45,21 @@ class ImageGenerationUI:
         if not self._check_image_consent(user_id):
             return None
 
+        # Add semantic structure for screen readers
+        st.markdown('<main role="main" id="main-content">', unsafe_allow_html=True)
+        
         st.title(get_text("image_generation_title"))
+        
+        # Add description for screen readers
+        st.markdown(
+            """
+            <div class="sr-only">
+                Image generation interface. Create visual representations of your personalized learning assistant.
+                You can generate images from your embodiment design, use custom prompts, or create variations.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
         st.write(
             """
@@ -53,20 +67,53 @@ class ImageGenerationUI:
         You can use your embodiment design or create custom prompts.
         """
         )
+        
+        # Add accessibility notice
+        st.info(
+            "🔍 **Accessibility Note:** All generated images will include alternative text descriptions. "
+            "If you have visual impairments, the system will provide detailed descriptions of generated avatars."
+        )
 
-        # Generation options
+        # Generation options with enhanced accessibility
+        st.markdown("### 🎨 Generation Options")
+        
         generation_mode = st.radio(
             "Generation Mode",
             options=["From Embodiment Design", "Custom Prompt", "Variations"],
-            help="Choose how you want to generate your avatar",
+            help="Choose how you want to generate your avatar. Each option provides different ways to create your learning assistant's visual representation.",
+            key="generation_mode_radio"
+        )
+        
+        # Add descriptions for each mode
+        mode_descriptions = {
+            "From Embodiment Design": "Use your previously designed embodiment characteristics to automatically generate an avatar that matches your learning assistant's personality and style.",
+            "Custom Prompt": "Write a detailed description of how you want your avatar to look. This gives you full creative control over the appearance.",
+            "Variations": "Create multiple versions based on an existing image, exploring different styles, expressions, or characteristics."
+        }
+        
+        st.markdown(
+            f"""
+            <div class="generation-mode-description" role="region" aria-label="Selected mode description">
+                <p><strong>Selected:</strong> {generation_mode}</p>
+                <p>{mode_descriptions[generation_mode]}</p>
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
+        # Render the selected generation mode
+        result = None
         if generation_mode == "From Embodiment Design":
-            return self._render_embodiment_generation(user_id, embodiment_data)
+            result = self._render_embodiment_generation(user_id, embodiment_data)
         elif generation_mode == "Custom Prompt":
-            return self._render_custom_prompt_generation(user_id)
+            result = self._render_custom_prompt_generation(user_id)
         else:  # Variations
-            return self._render_variation_generation(user_id)
+            result = self._render_variation_generation(user_id)
+        
+        # Close main content area
+        st.markdown('</main>', unsafe_allow_html=True)
+        
+        return result
 
     def render_image_gallery(self, user_id: UUID) -> None:
         """

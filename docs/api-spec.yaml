@@ -418,6 +418,239 @@ paths:
               schema:
                 $ref: '#/components/schemas/SuccessResponse'
 
+  # UX Enhancement Endpoints
+  /ux/image-correction:
+    post:
+      tags:
+        - UX Enhancements
+      summary: Process image correction
+      description: Process user image correction decisions and apply manual adjustments
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageCorrectionRequest'
+      responses:
+        '200':
+          description: Image correction processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageCorrectionResponse'
+        '400':
+          description: Invalid correction parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Original image not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /ux/image-quality:
+    post:
+      tags:
+        - UX Enhancements
+      summary: Analyze image quality
+      description: Analyze image quality and detect potential issues
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageQualityRequest'
+      responses:
+        '200':
+          description: Image quality analysis completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageQualityResponse'
+        '400':
+          description: Invalid image or parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /ux/prerequisites:
+    get:
+      tags:
+        - UX Enhancements
+      summary: Check system prerequisites
+      description: Check system prerequisites for a specific operation
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: operation
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [registration, chat_interaction, image_generation, system_startup]
+          description: The operation to check prerequisites for
+      responses:
+        '200':
+          description: Prerequisites checked successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrerequisiteCheckResponse'
+        '400':
+          description: Invalid operation specified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /ux/prerequisites/validate:
+    post:
+      tags:
+        - UX Enhancements
+      summary: Validate prerequisites for operation
+      description: Perform comprehensive prerequisite validation for a specific operation
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrerequisiteValidationRequest'
+      responses:
+        '200':
+          description: Prerequisite validation completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrerequisiteValidationResponse'
+        '400':
+          description: Invalid validation request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /ux/tooltips:
+    get:
+      tags:
+        - UX Enhancements
+      summary: Get tooltip content
+      description: Retrieve tooltip content for a specific UI element
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: element_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The ID of the UI element
+        - name: context
+          in: query
+          required: false
+          schema:
+            type: string
+          description: The context for the tooltip
+        - name: detail_level
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [basic, detailed, advanced]
+            default: basic
+          description: The level of detail for the tooltip
+      responses:
+        '200':
+          description: Tooltip content retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TooltipResponse'
+        '404':
+          description: Tooltip not found for element
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /ux/tooltips/interaction:
+    post:
+      tags:
+        - UX Enhancements
+      summary: Track tooltip interaction
+      description: Track user interaction with tooltips for analytics and learning
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TooltipInteractionRequest'
+      responses:
+        '200':
+          description: Tooltip interaction tracked successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Invalid interaction data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /ux/accessibility:
+    get:
+      tags:
+        - UX Enhancements
+      summary: Get accessibility features
+      description: Get accessibility features and configuration for the current user
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Accessibility features retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessibilityResponse'
+
+  /ux/performance/metrics:
+    get:
+      tags:
+        - UX Enhancements
+      summary: Get UX performance metrics
+      description: Get performance metrics for UX enhancement features
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: time_range
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [1h, 24h, 7d, 30d]
+            default: 1h
+          description: Time range for metrics
+      responses:
+        '200':
+          description: Performance metrics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UXPerformanceMetrics'
+
   # Administrative Endpoints
   /admin/statistics:
     get:
@@ -945,6 +1178,334 @@ components:
           default: true
         message:
           type: string
+
+    # UX Enhancement Schemas
+    ImageCorrectionRequest:
+      type: object
+      required:
+        - decision
+        - original_image_path
+      properties:
+        decision:
+          type: string
+          enum: [accept, adjust, reject, regenerate]
+          description: User's decision on the image correction
+        original_image_path:
+          type: string
+          description: Path to the original image
+        processed_image_path:
+          type: string
+          description: Path to the processed image (if available)
+        crop_coordinates:
+          type: object
+          properties:
+            x:
+              type: integer
+            y:
+              type: integer
+            width:
+              type: integer
+            height:
+              type: integer
+          description: Crop coordinates for manual adjustment
+        rejection_reason:
+          type: string
+          description: Reason for rejecting the image
+        suggested_modifications:
+          type: string
+          description: User's suggestions for improvement
+        confidence_score:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: User's confidence in their decision
+
+    ImageCorrectionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        processing_method:
+          type: string
+          enum: [accept_processed, manual_crop, use_original, regenerate, error]
+        final_image_path:
+          type: string
+          description: Path to the final corrected image
+        processing_time:
+          type: number
+          description: Processing time in seconds
+        user_feedback_recorded:
+          type: boolean
+        regeneration_triggered:
+          type: boolean
+        error_message:
+          type: string
+          description: Error message if processing failed
+
+    ImageQualityRequest:
+      type: object
+      required:
+        - image_path
+      properties:
+        image_path:
+          type: string
+          description: Path to the image to analyze
+        analysis_type:
+          type: string
+          enum: [basic, comprehensive, batch]
+          default: basic
+          description: Type of quality analysis to perform
+
+    ImageQualityResponse:
+      type: object
+      properties:
+        is_faulty:
+          type: boolean
+          description: Whether the image is considered faulty
+        faulty_reasons:
+          type: array
+          items:
+            type: string
+            enum: [no_person_detected, multiple_people_detected, wrong_subject_type, poor_quality, image_too_blurry, image_too_noisy, poor_brightness, low_contrast, corrupted_image, invalid_format]
+          description: List of reasons why the image is faulty
+        quality_score:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Overall quality score
+        confidence_score:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Confidence in the quality assessment
+        processing_time:
+          type: number
+          description: Analysis processing time in seconds
+        recommendations:
+          type: array
+          items:
+            type: string
+          description: Recommendations for improving the image
+
+    PrerequisiteCheckResponse:
+      type: object
+      properties:
+        overall_status:
+          type: string
+          enum: [passed, failed, passed_with_warnings]
+          description: Overall prerequisite check status
+        individual_results:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/PrerequisiteResult'
+          description: Results for individual prerequisite checks
+        can_proceed:
+          type: boolean
+          description: Whether the operation can proceed
+        blocking_issues:
+          type: array
+          items:
+            type: string
+          description: List of blocking issues that prevent operation
+        warnings:
+          type: array
+          items:
+            type: string
+          description: List of warnings that don't block operation
+
+    PrerequisiteValidationRequest:
+      type: object
+      required:
+        - operation
+      properties:
+        operation:
+          type: string
+          enum: [registration, chat_interaction, image_generation, system_startup]
+          description: The operation to validate prerequisites for
+        force_recheck:
+          type: boolean
+          default: false
+          description: Whether to force a fresh check ignoring cache
+
+    PrerequisiteValidationResponse:
+      type: object
+      properties:
+        overall_status:
+          type: string
+          enum: [passed, failed, passed_with_warnings]
+        individual_results:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/PrerequisiteResult'
+        validation_time:
+          type: number
+          description: Total validation time in seconds
+        cached_results:
+          type: boolean
+          description: Whether results were retrieved from cache
+
+    PrerequisiteResult:
+      type: object
+      properties:
+        passed:
+          type: boolean
+          description: Whether this prerequisite check passed
+        message:
+          type: string
+          description: Human-readable message about the check result
+        details:
+          type: object
+          additionalProperties: true
+          description: Additional details about the check
+        resolution_steps:
+          type: array
+          items:
+            type: string
+          description: Steps to resolve the issue if check failed
+        severity:
+          type: string
+          enum: [info, warning, error, critical]
+          description: Severity level of the issue
+        blocks_operation:
+          type: boolean
+          description: Whether this issue blocks the operation
+
+    TooltipResponse:
+      type: object
+      properties:
+        element_id:
+          type: string
+          description: ID of the UI element
+        content:
+          type: string
+          description: Tooltip content
+        context:
+          type: string
+          description: Context for the tooltip
+        detail_level:
+          type: string
+          enum: [basic, detailed, advanced]
+          description: Level of detail provided
+        aria_attributes:
+          type: object
+          additionalProperties:
+            type: string
+          description: ARIA attributes for accessibility
+        help_resources:
+          type: object
+          properties:
+            help_link:
+              type: string
+            video_tutorial:
+              type: string
+            related_topics:
+              type: array
+              items:
+                type: string
+          description: Additional help resources
+
+    TooltipInteractionRequest:
+      type: object
+      required:
+        - element_id
+        - interaction_type
+      properties:
+        element_id:
+          type: string
+          description: ID of the UI element
+        interaction_type:
+          type: string
+          enum: [hover, click, keyboard_access, screen_reader_access, help_resource_accessed]
+          description: Type of interaction
+        context:
+          type: string
+          description: Context when interaction occurred
+        time_spent:
+          type: number
+          description: Time spent on the tooltip in seconds
+        session_id:
+          type: string
+          description: Session ID for tracking
+        accessibility_context:
+          type: object
+          additionalProperties: true
+          description: Accessibility-related context
+
+    AccessibilityResponse:
+      type: object
+      properties:
+        features_enabled:
+          type: object
+          properties:
+            high_contrast:
+              type: boolean
+            large_text:
+              type: boolean
+            keyboard_navigation:
+              type: boolean
+            screen_reader_support:
+              type: boolean
+          description: Enabled accessibility features
+        css_overrides:
+          type: string
+          description: CSS overrides for accessibility
+        javascript_enhancements:
+          type: string
+          description: JavaScript enhancements for accessibility
+        aria_live_regions:
+          type: array
+          items:
+            type: string
+          description: ARIA live regions configuration
+
+    UXPerformanceMetrics:
+      type: object
+      properties:
+        time_range:
+          type: string
+          description: Time range for the metrics
+        tooltip_metrics:
+          type: object
+          properties:
+            total_interactions:
+              type: integer
+            average_response_time:
+              type: number
+            cache_hit_rate:
+              type: number
+          description: Tooltip system performance metrics
+        image_correction_metrics:
+          type: object
+          properties:
+            total_corrections:
+              type: integer
+            average_processing_time:
+              type: number
+            success_rate:
+              type: number
+          description: Image correction performance metrics
+        prerequisite_metrics:
+          type: object
+          properties:
+            total_validations:
+              type: integer
+            average_validation_time:
+              type: number
+            cache_hit_rate:
+              type: number
+          description: Prerequisite validation performance metrics
+        system_metrics:
+          type: object
+          properties:
+            memory_usage:
+              type: number
+            cpu_usage:
+              type: number
+            response_times:
+              type: object
+              additionalProperties:
+                type: number
+          description: Overall system performance metrics
 
     Error:
       type: object

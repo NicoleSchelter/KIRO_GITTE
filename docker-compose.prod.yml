@@ -16,6 +16,36 @@ services:
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
       - SECRET_KEY=${SECRET_KEY}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - REDIS_URL=redis://redis:6379/0
+      # UX Enhancement Configuration
+      - UX_FEATURES_ENABLED=true
+      - IMAGE_CORRECTION_ENABLED=true
+      - TOOLTIP_SYSTEM_ENABLED=true
+      - PREREQUISITE_VALIDATION_ENABLED=true
+      - ACCESSIBILITY_FEATURES_ENABLED=true
+      - PERFORMANCE_MONITORING_ENABLED=true
+      - LAZY_LOADING_ENABLED=true
+      - CACHING_ENABLED=true
+      # Performance Configuration (Production Optimized)
+      - CACHE_TTL_SECONDS=7200
+      - MAX_CACHE_SIZE_MB=1024
+      - LAZY_LOADING_TIMEOUT_SECONDS=60
+      - PREREQUISITE_CACHE_TTL_SECONDS=600
+      - TOOLTIP_CACHE_TTL_SECONDS=3600
+      # Image Processing Configuration
+      - IMAGE_QUALITY_THRESHOLD=0.7
+      - MAX_IMAGE_SIZE_MB=20
+      - SUPPORTED_IMAGE_FORMATS=png,jpg,jpeg,webp
+      - BACKGROUND_REMOVAL_ENABLED=true
+      # Accessibility Configuration
+      - WCAG_COMPLIANCE_LEVEL=AA
+      - HIGH_CONTRAST_ENABLED=true
+      - KEYBOARD_NAVIGATION_ENABLED=true
+      - SCREEN_READER_SUPPORT_ENABLED=true
+      # Monitoring Configuration
+      - METRICS_ENABLED=true
+      - PERFORMANCE_LOGGING_ENABLED=true
+      - ERROR_TRACKING_ENABLED=true
     volumes:
       - ./config:/app/config:ro
       - app_logs:/app/logs
@@ -24,6 +54,7 @@ services:
       - postgres
       - ollama
       - minio
+      - redis
     networks:
       - gitte-network
     restart: unless-stopped
@@ -110,6 +141,29 @@ services:
       timeout: 10s
       retries: 3
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"  # Only bind to localhost in production
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    volumes:
+      - redis_data:/data
+    networks:
+      - gitte-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   # Reverse proxy for production (optional)
   nginx:
     image: nginx:alpine
@@ -167,6 +221,8 @@ volumes:
   ollama_data:
     driver: local
   minio_data:
+    driver: local
+  redis_data:
     driver: local
   app_logs:
     driver: local
