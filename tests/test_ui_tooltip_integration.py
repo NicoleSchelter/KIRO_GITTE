@@ -6,10 +6,7 @@ import unittest
 from unittest.mock import Mock, patch, MagicMock
 from uuid import uuid4
 
-from src.ui.tooltip_integration import (
-    StreamlitTooltipIntegration,
-    get_tooltip_integration
-)
+from src.ui.tooltip_integration import get_tooltip_integration
 
 
 class TestUITooltipIntegration(unittest.TestCase):

@@ -83,143 +83,122 @@ class AccessibleChatUI:
         self._handle_greeting_cleanup()
 
     def _add_chat_accessibility_styles(self) -> None:
-        """Add chat-specific accessibility styles."""
-        chat_styles = """
-        <style>
-        /* Chat message accessibility */
-        .chat-message {
-            margin-bottom: 16px;
-            padding: 12px;
-            border-radius: 8px;
-            border: 1px solid #E0E0E0;
-            position: relative;
-        }
-        
-        .chat-message-user {
-            background-color: #E3F2FD;
-            margin-left: 20%;
-            border-color: #2196F3;
-        }
-        
-        .chat-message-assistant {
-            background-color: #F5F5F5;
-            margin-right: 20%;
-            border-color: #757575;
-        }
-        
-        .chat-message-header {
-            font-weight: bold;
-            margin-bottom: 8px;
-            font-size: 14px;
-        }
-        
-        .chat-message-content {
-            line-height: 1.5;
-            font-size: 16px;
-        }
-        
-        .chat-message-timestamp {
-            font-size: 12px;
-            color: #666;
-            margin-top: 8px;
-        }
-        
-        /* Chat input accessibility */
-        .chat-input-container {
-            border: 2px solid #2196F3;
-            border-radius: 8px;
-            padding: 16px;
-            margin-top: 16px;
-            background-color: #FAFAFA;
-        }
-        
-        .chat-input-label {
-            font-weight: bold;
-            margin-bottom: 8px;
-            display: block;
-        }
-        
-        .chat-input-help {
-            font-size: 14px;
-            color: #666;
-            margin-bottom: 8px;
-        }
-        
-        .chat-input-counter {
-            font-size: 12px;
-            color: #666;
-            text-align: right;
-            margin-top: 4px;
-        }
-        
-        /* High contrast mode support */
-        @media (prefers-contrast: high) {
+        """Add chat-specific accessibility styles with caching."""
+        # Only inject styles once per session
+        if "accessibility_styles_loaded" not in st.session_state:
+            chat_styles = """
+            <style>
+            .chat-container {
+                max-height: 400px;
+                overflow-y: auto;
+                scroll-behavior: smooth;
+            }
             .chat-message {
-                border-width: 2px;
+                margin-bottom: 1rem;
+                padding: 0.5rem;
+                border-radius: 0.25rem;
             }
-            
             .chat-message-user {
-                background-color: #FFFFFF;
-                border-color: #000000;
+                background-color: #e3f2fd;
+                margin-left: 20%;
             }
-            
             .chat-message-assistant {
-                background-color: #F0F0F0;
-                border-color: #000000;
+                background-color: #f5f5f5;
+                margin-right: 20%;
             }
-            
-            .chat-input-container {
-                border-color: #000000;
-                background-color: #FFFFFF;
+            @media (prefers-reduced-motion: reduce) {
+                .chat-container {
+                    scroll-behavior: auto;
+                }
             }
-        }
+            </style>
+            """
+            st.markdown(chat_styles, unsafe_allow_html=True)
+            st.session_state.accessibility_styles_loaded = True
+
+    def _render_accessible_chat_messages(self, user_id: UUID) -> None:
+        """Render accessible chat messages with optimized performance."""
+        # Initialize chat history with user-specific key
+        messages_key = f"accessible_chat_messages_{user_id}"
+        if messages_key not in st.session_state:
+            st.session_state[messages_key] = []
+            # Add welcome message only once
+            welcome_msg = self._create_accessible_welcome_message(user_id)
+            st.session_state[messages_key].append(welcome_msg)
+
+        messages = st.session_state[messages_key]
         
-        /* Focus indicators for chat elements */
-        .chat-message:focus {
-            outline: 3px solid #2196F3;
-            outline-offset: 2px;
-        }
+        # Implement pagination for performance
+        max_visible_messages = 50
+        if len(messages) > max_visible_messages:
+            # Show load more button
+            if st.button("📄 Load Earlier Messages", key=f"load_more_{user_id}"):
+                st.session_state[f"show_all_messages_{user_id}"] = True
+                st.rerun()
         
-        /* Screen reader announcements */
-        .chat-announcement {
-            position: absolute;
-            left: -9999px;
-            width: 1px;
-            height: 1px;
-            overflow: hidden;
-        }
+        # Determine which messages to show
+        if st.session_state.get(f"show_all_messages_{user_id}", False):
+            visible_messages = messages
+        else:
+            visible_messages = messages[-max_visible_messages:]
+
+        # Messages container with ARIA labels
+        st.markdown(
+            f"""<div role="log" aria-live="polite" aria-label="Chat conversation" class="chat-container" id="chat-messages-{user_id}">""",
+            unsafe_allow_html=True,
+        )
+
+        # Render messages efficiently
+        for i, message in enumerate(visible_messages):
+            self._render_optimized_message(message, i, len(visible_messages), user_id)
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # Auto-scroll only for new messages
+        if self.auto_scroll and messages:
+            last_message_id = f"message-{len(messages)-1}"
+            st.markdown(
+                f"""<script>
+                document.getElementById('{last_message_id}')?.scrollIntoView({{behavior: 'smooth'}});
+                </script>""",
+                unsafe_allow_html=True,
+            )
+
+    def _render_optimized_message(self, message: dict, index: int, total: int, user_id: str) -> None:
+        """Render individual message with minimal DOM manipulation."""
+        role = message["role"]
+        content = message["content"]
+        timestamp = message.get("timestamp", time.time())
+        message_id = message.get("id", f"message-{index}")
+
+        # Format timestamp
+        time_str = time.strftime("%H:%M", time.localtime(timestamp))
         
-        /* Chat status indicators */
-        .chat-status {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 16px;
-            padding: 8px 12px;
-            background-color: #E8F5E8;
-            border: 1px solid #4CAF50;
-            border-radius: 4px;
-        }
+        # Create ARIA label
+        sender = "You" if role == "user" else "Assistant"
+        aria_label = f"Message {index + 1} of {total} from {sender} at {time_str}"
+
+        # Efficient message rendering
+        message_class = f"chat-message chat-message-{role}"
         
-        .chat-status-icon {
-            width: 16px;
-            height: 16px;
-            border-radius: 50%;
-            background-color: #4CAF50;
-        }
-        
-        .chat-status.offline .chat-status-icon {
-            background-color: #F44336;
-        }
-        
-        .chat-status.offline {
-            background-color: #FFEBEE;
-            border-color: #F44336;
-        }
-        </style>
+        message_html = f"""
+        <div class="{message_class}" 
+            role="article" 
+            aria-label="{aria_label}"
+            id="{message_id}">
+            <div class="message-header">
+                <span class="sender-icon">{'👤' if role == 'user' else '🤖'}</span>
+                <span class="sender-name">{sender}</span>
+                <time class="message-time" datetime="{time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(timestamp))}">{time_str}</time>
+            </div>
+            <div class="message-content">
+                {self._format_message_content(content)}
+            </div>
+        </div>
         """
 
-        st.markdown(chat_styles, unsafe_allow_html=True)
+        st.markdown(message_html, unsafe_allow_html=True)
+
 
     def _render_accessible_chat_header(self, user_id: UUID) -> None:
         """Render accessible chat header."""

@@ -5,18 +5,15 @@ Provides Streamlit components for consent management and privacy compliance.
 
 import logging
 from uuid import UUID
-
+import time
 import streamlit as st
 
 from config.config import get_text
 from src.data.models import ConsentType
 from src.logic.consent import ConsentError
 from src.services.consent_service import get_consent_service
-from src.ui.tooltip_integration import (
-    get_tooltip_integration,
-    consent_checkbox,
-    tooltip_button
-)
+from src.ui.tooltip_integration import get_tooltip_integration
+from src.logic.onboarding import OnboardingStep
 
 logger = logging.getLogger(__name__)
 
@@ -173,138 +170,96 @@ class ConsentUI:
             logger.error(f"Error rendering consent management: {e}")
             st.error("Error loading consent management. Please try again.")
 
-    def render_onboarding_consent(self, user_id: UUID) -> bool:
-        """
-        Render consent form for onboarding flow.
-
-        Args:
-            user_id: User identifier
-
-        Returns:
-            bool: True if consent was successfully recorded
-        """
+    def render_guided_onboarding_flow(self, user_id: UUID) -> bool:
+        """Render the complete guided onboarding flow with anti-loop protection."""
         try:
-            st.title("Welcome to GITTE!")
-            st.write(
-                "Before we begin, we need your consent for data processing and AI interactions."
-            )
+            # Initialize flow control state
+            flow_key = f"onboarding_flow_{user_id}"
+            if flow_key not in st.session_state:
+                st.session_state[flow_key] = {
+                    "initialized": True,
+                    "rerun_count": 0,
+                    "last_rerun": 0,
+                    "max_reruns": 5,  # Prevent infinite loops
+                    "cooldown_time": 1  # Seconds between reruns
+                }
 
-            # Show privacy information
-            with st.expander("Privacy Information", expanded=True):
-                st.write(
-                    """
-                **What data do we collect?**
-                - Basic profile information for personalization
-                - Chat interactions to improve your learning experience
-                - Generated images and preferences
-                - Usage analytics to improve the system
-                
-                **How do we use your data?**
-                - To provide personalized tutoring experiences
-                - To generate visual representations of your learning assistant
-                - To improve our AI models (optional, with federated learning)
-                - To ensure system security and compliance
-                
-                **Your rights:**
-                - You can withdraw consent at any time
-                - You can request data export or deletion
-                - Your data is processed according to GDPR standards
-                """
-                )
+            flow_state = st.session_state[flow_key]
+            current_time = time.time()
 
-            # Essential consents (required for basic functionality)
-            st.subheader("Essential Consents (Required)")
-            essential_consents = [ConsentType.DATA_PROCESSING, ConsentType.AI_INTERACTION]
-            essential_values = {}
+            # Anti-loop protection
+            if (flow_state["rerun_count"] >= flow_state["max_reruns"] and 
+                current_time - flow_state["last_rerun"] < flow_state["cooldown_time"]):
+                st.warning("⚠️ Flow rate limited. Please wait a moment before continuing.")
+                return False
 
-            tooltip_id_map = {
-                ConsentType.DATA_PROCESSING: "data_processing_consent",
-                ConsentType.AI_INTERACTION: "llm_interaction_consent", 
-                ConsentType.IMAGE_GENERATION: "image_generation_consent",
-                ConsentType.ANALYTICS: "analytics_consent"
-            }
+            # Get current onboarding state
+            state = self.onboarding_logic.get_user_onboarding_state(user_id)
 
-            for consent_type in essential_consents:
-                display_name = self._get_consent_display_name(consent_type)
-                tooltip_id = tooltip_id_map.get(consent_type, "data_processing_consent")
+            # Check if onboarding is already complete
+            if state["onboarding_complete"]:
+                return True
 
-                essential_values[consent_type] = consent_checkbox(
-                    display_name,
-                    tooltip_id,
-                    user_id=user_id,
-                    consent_type=consent_type.value,
-                    value=False,
-                    key=f"essential_{consent_type.value}"
-                )
+            # Render onboarding header
+            self._render_onboarding_header(state)
 
-            # Optional consents
-            st.subheader("Optional Consents")
-            optional_consents = [
-                ConsentType.IMAGE_GENERATION,
-                ConsentType.FEDERATED_LEARNING,
-                ConsentType.ANALYTICS,
-            ]
-            optional_values = {}
+            # Render current step
+            current_step = OnboardingStep(state["current_step"])
+            step_result = self._render_current_step(user_id, current_step, state)
 
-            for consent_type in optional_consents:
-                display_name = self._get_consent_display_name(consent_type)
-                tooltip_id = tooltip_id_map.get(consent_type, "analytics_consent")
-
-                optional_values[consent_type] = consent_checkbox(
-                    display_name,
-                    tooltip_id,
-                    user_id=user_id,
-                    consent_type=consent_type.value,
-                    value=True,  # Default to True for optional consents
-                    key=f"optional_{consent_type.value}"
-                )
-
-            # Check if essential consents are given
-            essential_given = all(essential_values.values())
-
-            if not essential_given:
-                st.warning("Essential consents are required to use GITTE.")
-
-            # Save consent button
-            if tooltip_button(
-                "Continue with These Settings", 
-                "register_submit_button",
-                disabled=not essential_given,
-                context={"reason": "Essential consents required"} if not essential_given else None,
-                type="primary"
-            ):
-                all_consents = {**essential_values, **optional_values}
-
-                try:
-                    # Record bulk consent
-                    self.consent_service.record_bulk_consent(
-                        user_id,
-                        all_consents,
-                        {
-                            "source": "onboarding",
-                            "timestamp": str(st.session_state.get("current_time", "")),
-                        },
-                    )
-
-                    st.success(get_text("success_consent_recorded"))
-                    st.balloons()
-
-                    # Clear the consent UI flag
-                    if "show_consent_ui" in st.session_state:
-                        del st.session_state.show_consent_ui
-
-                    return True
-
-                except ConsentError as e:
-                    st.error(f"Failed to record consent: {e}")
-                    return False
+            # Handle step completion with controlled advancement
+            if step_result:
+                # Reset rerun count on successful step completion
+                flow_state["rerun_count"] = 0
+                return self._handle_controlled_step_completion(user_id, current_step, step_result)
 
             return False
 
         except Exception as e:
-            logger.error(f"Error rendering onboarding consent: {e}")
-            st.error("Error loading consent form. Please try again.")
+            logger.error(f"Error rendering onboarding flow for user {user_id}: {e}")
+            st.error("⚠️ Onboarding flow error. Please refresh the page.")
             return False
+
+    def _handle_controlled_step_completion(self, user_id: UUID, current_step: OnboardingStep, step_data: dict) -> bool:
+        """Handle step completion with controlled reruns."""
+        flow_key = f"onboarding_flow_{user_id}"
+        flow_state = st.session_state[flow_key]
+        
+        try:
+            # Store step data
+            if step_data.get("data"):
+                self.onboarding_logic.collect_personalization_data(
+                    user_id, f"step_{current_step.value}", step_data["data"]
+                )
+
+            # Advance to next step
+            next_step = self.onboarding_logic.advance_to_next_step(
+                user_id, current_step, step_data.get("data")
+            )
+
+            # Update flow control
+            flow_state["rerun_count"] += 1
+            flow_state["last_rerun"] = time.time()
+
+            # Complete or advance
+            if next_step == OnboardingStep.COMPLETE:
+                st.session_state[f"onboarding_complete_{user_id}"] = True
+                st.success("🎉 Onboarding completed successfully!")
+                return True
+            else:
+                st.session_state[f"current_step_{user_id}"] = next_step.value
+                
+                # Controlled rerun with delay
+                time.sleep(0.1)  # Brief pause to prevent race conditions
+                st.rerun()
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Error handling step completion: {e}")
+            st.error("Error advancing to next step. Please try again.")
+            return False
+
 
     def _render_consent_status(self, user_id: UUID) -> None:
         """Render current consent status."""

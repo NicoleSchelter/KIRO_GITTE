@@ -6,6 +6,7 @@ Provides comprehensive guided onboarding flow with automated navigation and stat
 import logging
 from typing import Any
 from uuid import UUID
+import time
 
 import streamlit as st
 
@@ -27,16 +28,28 @@ class OnboardingUI:
         self.consent_service = get_consent_service()
 
     def render_guided_onboarding_flow(self, user_id: UUID) -> bool:
-        """
-        Render the complete guided onboarding flow with automated navigation.
-
-        Args:
-            user_id: User identifier
-
-        Returns:
-            bool: True if onboarding is complete
-        """
+        """Render the complete guided onboarding flow with anti-loop protection."""
         try:
+            # Initialize flow control state
+            flow_key = f"onboarding_flow_{user_id}"
+            if flow_key not in st.session_state:
+                st.session_state[flow_key] = {
+                    "initialized": True,
+                    "rerun_count": 0,
+                    "last_rerun": 0,
+                    "max_reruns": 5,  # Prevent infinite loops
+                    "cooldown_time": 1  # Seconds between reruns
+                }
+
+            flow_state = st.session_state[flow_key]
+            current_time = time.time()
+
+            # Anti-loop protection
+            if (flow_state["rerun_count"] >= flow_state["max_reruns"] and 
+                current_time - flow_state["last_rerun"] < flow_state["cooldown_time"]):
+                st.warning("⚠️ Flow rate limited. Please wait a moment before continuing.")
+                return False
+
             # Get current onboarding state
             state = self.onboarding_logic.get_user_onboarding_state(user_id)
 
@@ -49,18 +62,61 @@ class OnboardingUI:
 
             # Render current step
             current_step = OnboardingStep(state["current_step"])
-            step_completed = self._render_current_step(user_id, current_step, state)
+            step_result = self._render_current_step(user_id, current_step, state)
 
-            # Handle step completion and automatic advancement
-            if step_completed:
-                return self._handle_step_completion(user_id, current_step, step_completed)
+            # Handle step completion with controlled advancement
+            if step_result:
+                # Reset rerun count on successful step completion
+                flow_state["rerun_count"] = 0
+                return self._handle_controlled_step_completion(user_id, current_step, step_result)
 
             return False
 
         except Exception as e:
             logger.error(f"Error rendering onboarding flow for user {user_id}: {e}")
-            st.error("Error loading onboarding flow. Please refresh the page.")
+            st.error("⚠️ Onboarding flow error. Please refresh the page.")
             return False
+
+    def _handle_controlled_step_completion(self, user_id: UUID, current_step: OnboardingStep, step_data: dict) -> bool:
+        """Handle step completion with controlled reruns."""
+        flow_key = f"onboarding_flow_{user_id}"
+        flow_state = st.session_state[flow_key]
+        
+        try:
+            # Store step data
+            if step_data.get("data"):
+                self.onboarding_logic.collect_personalization_data(
+                    user_id, f"step_{current_step.value}", step_data["data"]
+                )
+
+            # Advance to next step
+            next_step = self.onboarding_logic.advance_to_next_step(
+                user_id, current_step, step_data.get("data")
+            )
+
+            # Update flow control
+            flow_state["rerun_count"] += 1
+            flow_state["last_rerun"] = time.time()
+
+            # Complete or advance
+            if next_step == OnboardingStep.COMPLETE:
+                st.session_state[f"onboarding_complete_{user_id}"] = True
+                st.success("🎉 Onboarding completed successfully!")
+                return True
+            else:
+                st.session_state[f"current_step_{user_id}"] = next_step.value
+                
+                # Controlled rerun with delay
+                time.sleep(0.1)  # Brief pause to prevent race conditions
+                st.rerun()
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Error handling step completion: {e}")
+            st.error("Error advancing to next step. Please try again.")
+            return False
+
 
     def render_onboarding_summary(self, user_id: UUID) -> None:
         """
@@ -437,11 +493,16 @@ class OnboardingUI:
         st.write("**Consent Status:**")
         st.write(f"- Consents given: {summary['consents_given']}/{summary['total_consent_types']}")
 
-    def _handle_step_completion(
-        self, user_id: UUID, current_step: OnboardingStep, step_data: dict[str, Any]
-    ) -> bool:
-        """Handle step completion and advance to next step."""
+    def _handle_step_completion(self, user_id: UUID, current_step: OnboardingStep, step_data: dict[str, Any]) -> bool:
         try:
+            # Konsistente Session State Initialisierung
+            if "onboarding_state" not in st.session_state:
+                st.session_state.onboarding_state = {
+                    "complete": False,
+                    "current_step": current_step.value,
+                    "last_update": time.time()
+                }
+            
             # Store step data if provided
             if step_data.get("data"):
                 self.onboarding_logic.collect_personalization_data(
@@ -453,19 +514,18 @@ class OnboardingUI:
                 user_id, current_step, step_data.get("data")
             )
 
-            # Update session state
+            # Update session state atomically
             if next_step == OnboardingStep.COMPLETE:
-                if hasattr(st.session_state, "onboarding_complete"):
-                    st.session_state.onboarding_complete = True
-                else:
-                    st.session_state["onboarding_complete"] = True
+                st.session_state.onboarding_state["complete"] = True
+                st.session_state.onboarding_state["completion_time"] = time.time()
                 return True
             else:
-                if hasattr(st.session_state, "onboarding_step"):
-                    st.session_state.onboarding_step = next_step.value
-                else:
-                    st.session_state["onboarding_step"] = next_step.value
-                st.rerun()
+                st.session_state.onboarding_state["current_step"] = next_step.value
+                st.session_state.onboarding_state["last_update"] = time.time()
+                # Only rerun if step actually changed
+                if st.session_state.onboarding_state.get("previous_step") != next_step.value:
+                    st.session_state.onboarding_state["previous_step"] = next_step.value
+                    st.rerun()
 
             return False
 
@@ -473,7 +533,6 @@ class OnboardingUI:
             logger.error(f"Error handling step completion for user {user_id}: {e}")
             st.error("Error advancing to next step. Please try again.")
             return False
-
 
 # Global onboarding UI instance
 onboarding_ui = OnboardingUI()

@@ -76,7 +76,7 @@ class AuthenticationUI:
             )
 
             # Enhanced password input with accessibility features
-            password = self.tooltip_integration.text_input_with_tooltip(
+            password = tooltip_input(
                 "Password",
                 "password_input",
                 type="password",

@@ -237,26 +237,66 @@ class ChatUI:
                     with st.chat_message("assistant"):
                         st.write(message["content"])
 
-    def _render_chat_input(self, user_id: UUID) -> None:
-        """Render chat input field."""
-        user_input = st.chat_input("Type your message here...", key="main_chat_input")
+def _render_chat_input(self, user_id: UUID) -> None:
+    """Render chat input field with unique keys."""
+    # Generate unique key based on user and timestamp
+    chat_session_key = f"chat_input_{user_id}_{int(time.time() / 300)}"  # 5min windows
+    
+    # Initialize input state if not exists
+    if f"chat_state_{user_id}" not in st.session_state:
+        st.session_state[f"chat_state_{user_id}"] = {
+            "message_count": 0,
+            "last_activity": time.time(),
+            "input_key": chat_session_key
+        }
+    
+    user_input = st.chat_input(
+        "Type your message here...", 
+        key=st.session_state[f"chat_state_{user_id}"]["input_key"]
+    )
 
-        if user_input:
-            # Add user message to history
-            st.session_state.chat_messages.append(
-                {"role": "user", "content": user_input, "timestamp": time.time()}
-            )
+    if user_input:
+        # Increment message count for unique keys
+        st.session_state[f"chat_state_{user_id}"]["message_count"] += 1
+        st.session_state[f"chat_state_{user_id}"]["last_activity"] = time.time()
+        
+        # Process message without immediate rerun
+        self._add_message_and_process(user_id, user_input)
 
-            # Process user input and get response
-            with st.spinner("Thinking..."):
-                response = self._process_chat_input(user_id, user_input)
+    def _add_message_and_process(self, user_id: UUID, message: str) -> None:
+        """Add message and process response without triggering rerun."""
+        try:
+            # Add user message
+            chat_key = f"chat_messages_{user_id}"
+            if chat_key not in st.session_state:
+                st.session_state[chat_key] = []
+            
+            st.session_state[chat_key].append({
+                "role": "user",
+                "content": message.strip(),
+                "timestamp": time.time(),
+                "id": f"msg_{len(st.session_state[chat_key])}"
+            })
 
-            # Add assistant response to history
-            st.session_state.chat_messages.append(
-                {"role": "assistant", "content": response, "timestamp": time.time()}
-            )
+            # Process in background without rerun
+            with st.spinner("🤖 Assistant is thinking..."):
+                response = self._process_chat_input(user_id, message)
 
+            # Add assistant response
+            st.session_state[chat_key].append({
+                "role": "assistant", 
+                "content": response, 
+                "timestamp": time.time(),
+                "id": f"msg_{len(st.session_state[chat_key])}"
+            })
+
+            # Single rerun at the end
             st.rerun()
+
+        except Exception as e:
+            logger.error(f"Error processing message: {e}")
+            st.error("Failed to send message. Please try again.")
+
 
     def _render_chat_controls(self) -> None:
         """Render chat control buttons."""

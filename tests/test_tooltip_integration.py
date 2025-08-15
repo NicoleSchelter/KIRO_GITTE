@@ -5,13 +5,7 @@ Tests for Tooltip Integration helpers.
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 
-from src.ui.tooltip_integration import (
-    StreamlitTooltipIntegration,
-    get_tooltip_integration,
-    tooltip_button,
-    tooltip_input,
-    tooltip_selectbox,
-    tooltip_checkbox,
+from src.ui.tooltip_integration import get_tooltip_integration    tooltip_checkbox,
     consent_checkbox,
     form_submit_button,
     prerequisite_button

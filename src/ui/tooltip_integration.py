@@ -1,291 +1,194 @@
-# src/ui/tooltip_integration.py
 """
-Streamlit Integration for GITTE Tooltip System.
-Provides helper functions to integrate tooltips with Streamlit components.
+Tooltip integration for GITTE system - KORRIGIERTE VERSION
+Provides tooltip functionality without key parameter conflicts.
 """
-
-from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional, List
-from uuid import UUID
+from datetime import datetime
+from typing import Any, Optional, Callable
 
 import streamlit as st
-
-from src.ui.tooltip_content_manager import get_tooltip_content_manager
-from src.ui.tooltip_system import get_tooltip_system
 
 logger = logging.getLogger(__name__)
 
 
-class StreamlitTooltipIntegration:
-    """Integration layer between GITTE tooltip system and Streamlit components."""
+class TooltipIntegration:
+    """Manages tooltip integration and form validation without key parameter issues."""
 
     def __init__(self):
-        self.tooltip_manager = get_tooltip_content_manager()
-        self.tooltip_system = get_tooltip_system()
-        self._css_injected = False
+        self.tooltips = {}
+        self.button_states = {}
+        if 'tooltip_integration_initialized' not in st.session_state:
+            st.session_state.tooltip_integration_initialized = True
 
-    # -------- internal --------
-    def _ensure_css_injected(self) -> None:
-        if not self._css_injected:
-            try:
-                self.tooltip_system.inject_css()
-            except Exception:
-                # Never let tooltips break the UI
-                pass
-            self._css_injected = True
+    def register_tooltip(self, tooltip_id: str, text: str) -> None:
+        """Register tooltip text for an ID."""
+        self.tooltips[tooltip_id] = text
 
-    def _help_text(self, tooltip_id: Optional[str], context: Optional[Dict[str, Any]] = None) -> Optional[str]:
-        try:
-            return self.tooltip_manager.get_tooltip_for_element(tooltip_id, context or {})
-        except Exception:
-            return None
+    def get_tooltip_text(self, tooltip_id: str) -> Optional[str]:
+        """Get tooltip text for an ID."""
+        return self.tooltips.get(tooltip_id, None)
 
-    # -------- basic widgets --------
-    def button_with_tooltip(
-        self,
-        label: str,
-        tooltip_id: str,
-        disabled: bool = False,
-        context: Optional[Dict[str, Any]] = None,
-        **button_kwargs,
-    ) -> bool:
-        self._ensure_css_injected()
-        help_text = self._help_text(tooltip_id, context)
-        # Avoid conflicting help kwarg
-        if "help" in button_kwargs:
-            button_kwargs.pop("help")
-        return st.button(label, disabled=disabled, help=help_text, **button_kwargs)
-
-    def text_input_with_tooltip(
-        self,
-        label: str,
-        tooltip_id: str,
-        value: str = "",
-        context: Optional[Dict[str, Any]] = None,
-        **input_kwargs,
-    ) -> str:
-        self._ensure_css_injected()
-        help_text = self._help_text(tooltip_id, context)
-        input_kwargs.pop("help", None)
-        return st.text_input(label, value=value, help=help_text, **input_kwargs)
-
-    def text_area_with_tooltip(
-        self,
-        label: str,
-        tooltip_id: str,
-        value: str = "",
-        context: Optional[Dict[str, Any]] = None,
-        **textarea_kwargs,
-    ) -> str:
-        self._ensure_css_injected()
-        help_text = self._help_text(tooltip_id, context)
-        textarea_kwargs.pop("help", None)
-        return st.text_area(label, value=value, help=help_text, **textarea_kwargs)
-
-    def selectbox_with_tooltip(
-        self,
-        label: str,
-        tooltip_id: str,
-        options: list,
-        index: int = 0,
-        context: Optional[Dict[str, Any]] = None,
-        **selectbox_kwargs,
-    ) -> Any:
-        self._ensure_css_injected()
-        help_text = self._help_text(tooltip_id, context)
-        selectbox_kwargs.pop("help", None)
-        return st.selectbox(label, options=options, index=index, help=help_text, **selectbox_kwargs)
-
-    def checkbox_with_tooltip(
-        self,
-        label: str,
-        tooltip_id: str,
-        value: bool = False,
-        context: Optional[Dict[str, Any]] = None,
-        **checkbox_kwargs,
-    ) -> bool:
-        self._ensure_css_injected()
-        help_text = self._help_text(tooltip_id, context)
-        checkbox_kwargs.pop("help", None)
-        return st.checkbox(label, value=value, help=help_text, **checkbox_kwargs)
-
-    def multiselect_with_tooltip(
-        self,
-        label: str,
-        tooltip_id: str,
-        options: list,
-        default: Optional[list] = None,
-        context: Optional[Dict[str, Any]] = None,
-        **multiselect_kwargs,
-    ) -> list:
-        self._ensure_css_injected()
-        help_text = self._help_text(tooltip_id, context)
-        multiselect_kwargs.pop("help", None)
-        return st.multiselect(label, options=options, default=default or [], help=help_text, **multiselect_kwargs)
-
-    def slider_with_tooltip(
-        self,
-        label: str,
-        tooltip_id: str,
-        min_value: float,
-        max_value: float,
-        value: Optional[float] = None,
-        context: Optional[Dict[str, Any]] = None,
-        **slider_kwargs,
-    ) -> float:
-        self._ensure_css_injected()
-        help_text = self._help_text(tooltip_id, context)
-        slider_kwargs.pop("help", None)
-        return st.slider(label, min_value=min_value, max_value=max_value, value=value, help=help_text, **slider_kwargs)
-
-    # -------- consent/prereq helpers --------
-    def consent_checkbox_with_context(
-        self,
-        label: str,
-        tooltip_id: str,
-        user_id: UUID,
-        consent_type: str,
-        value: bool = False,
-        **checkbox_kwargs,
-    ) -> bool:
-        context = {
-            "consent_granted": value,
-            "consent_type": consent_type,
-            "dependent_features": self._get_dependent_features(consent_type),
-        }
-        return self.checkbox_with_tooltip(label, tooltip_id, value=value, context=context, **checkbox_kwargs)
-
-    def prerequisite_button(
-        self,
-        label: str,
-        tooltip_id: str,
-        prerequisites_met: bool,
-        missing_prerequisites: Optional[list] = None,
-        **button_kwargs,
-    ) -> bool:
-        context = {
-            "disabled": not prerequisites_met,
-            "prerequisites_met": prerequisites_met,
-            "missing_prerequisites": missing_prerequisites or [],
-            "reason": f"Missing: {', '.join(missing_prerequisites or [])}" if not prerequisites_met else None,
-        }
-        return self.button_with_tooltip(
-            label,
-            tooltip_id,
-            disabled=not prerequisites_met,
-            context=context,
-            **button_kwargs,
-        )
-
-    def _get_dependent_features(self, consent_type: str) -> list:
-        dependency_map = {
-            "data_processing": ["Account creation", "Profile management"],
-            "llm_interaction": ["Chat with assistant", "AI responses"],
-            "image_generation": ["Avatar creation", "Visual customization"],
-            "analytics": ["Usage insights", "Performance optimization"],
-            "federated_learning": ["Model improvement", "Collaborative learning"],
-        }
-        return dependency_map.get(consent_type, [])
-
-    # -------- the important one: submit inside st.form --------
     def form_button_with_validation(
         self,
         label: str,
         tooltip_id: str,
         form_valid: bool = True,
-        validation_errors: Optional[List[str]] = None,
-        *,
-        key: Optional[str] = None,
-        type: Optional[str] = None,  # "primary" | "secondary"
-        use_container_width: Optional[bool] = None,
         disabled: Optional[bool] = None,
-        help: Optional[str] = None,  # will be overridden by tooltip if present
-        on_click=None,
-        args=None,
-        kwargs=None,
+        help: Optional[str] = None,
+        button_type: str = "primary",
+        on_click: Optional[Callable] = None,
+        **kwargs
     ) -> bool:
         """
-        Submit button to be used INSIDE a `with st.form(...):` block.
-        Uses Streamlit's `st.form_submit_button` (Streamlit >= 1.20; tested on 1.48).
+        Create form submit button with validation - OHNE key parameter.
+        
+        Args:
+            label: Button text
+            tooltip_id: Unique identifier for tooltip and tracking
+            form_valid: Whether form validation passed
+            disabled: Manual disable state
+            help: Help text (overrides tooltip)
+            button_type: Button type
+            on_click: Callback function
+            **kwargs: Additional parameters for st.form_submit_button
+            
+        Returns:
+            bool: True if button was clicked
         """
-        self._ensure_css_injected()
+        
+        # Get tooltip text if no help provided
+        tooltip_help = help or self.get_tooltip_text(tooltip_id)
+        
+        # Compute disabled state (manual disabled or validation failed)
+        is_disabled = (disabled is True) or (not form_valid)
+        
+        # Determine button type based on validation
+        resolved_type = "secondary" if not form_valid else button_type
+        
+        # Prepare parameters for st.form_submit_button (OHNE key parameter!)
+        button_params = {
+            'label': label,
+            'type': resolved_type,
+            'disabled': is_disabled
+        }
+        
+        # Add help text if available
+        if tooltip_help:
+            button_params['help'] = tooltip_help
+            
+        # Add callback if provided
+        if on_click:
+            button_params['on_click'] = on_click
+            
+        # Add other allowed parameters
+        allowed_params = ['args', 'kwargs', 'icon', 'use_container_width', 'width']
+        for param in allowed_params:
+            if param in kwargs:
+                button_params[param] = kwargs[param]
+        
+        try:
+            # Create submit button WITHOUT key parameter
+            submitted = st.form_submit_button(**button_params)
+            
+            # Track button state manually in session state
+            if submitted:
+                button_state_key = f"button_clicked_{tooltip_id}"
+                st.session_state[button_state_key] = {
+                    'clicked': True,
+                    'tooltip_id': tooltip_id,
+                    'timestamp': datetime.now(),
+                    'form_valid': form_valid,
+                    'label': label
+                }
+                
+                logger.info(f"Form button clicked: {tooltip_id} (valid: {form_valid})")
+            
+            return submitted
+            
+        except Exception as e:
+            logger.error(f"Error creating form submit button {tooltip_id}: {e}")
+            # Fallback button with minimal parameters
+            return st.form_submit_button(label=label, disabled=is_disabled)
 
-        # Build tooltip help text (never crash UI)
-        context = {"is_valid": form_valid, "errors": validation_errors or [], "disabled": not form_valid}
-        tooltip_help = self._help_text(tooltip_id, context)
+    def get_button_state(self, tooltip_id: str) -> Optional[dict]:
+        """Get the last state of a button by tooltip_id."""
+        button_state_key = f"button_clicked_{tooltip_id}"
+        return st.session_state.get(button_state_key, None)
 
-        # Decide button style once
-        resolved_type = type or ("primary" if True else "secondary")
+    def clear_button_state(self, tooltip_id: str) -> None:
+        """Clear button state for tooltip_id."""
+        button_state_key = f"button_clicked_{tooltip_id}"
+        if button_state_key in st.session_state:
+            del st.session_state[button_state_key]
 
-        # Compute disabled state (validation wins)
-        resolved_disabled = (disabled is True) or (not form_valid)
-
-        submitted = st.form_submit_button(
-            label=label,
-            key=key,
-            help=tooltip_help or help,
-            type=resolved_type,
-            disabled=resolved_disabled,
-            use_container_width=use_container_width if use_container_width is not None else False,
-            on_click=on_click,
-            args=args,
-            kwargs=kwargs,
-        )
-
-        if not form_valid and validation_errors:
-            st.error("Please fix the following problems:")
-            for err in validation_errors:
-                st.write(f"- {err}")
-
-        return submitted
+    def was_button_clicked(self, tooltip_id: str) -> bool:
+        """Check if a specific button was clicked in this session."""
+        state = self.get_button_state(tooltip_id)
+        return state is not None and state.get('clicked', False)
 
 
-# -------- singleton and public helpers --------
-_tooltip_integration: Optional[StreamlitTooltipIntegration] = None
+# Global tooltip integration instance
+_tooltip_integration_instance = None
 
-def get_tooltip_integration() -> StreamlitTooltipIntegration:
-    global _tooltip_integration
-    if _tooltip_integration is None or not hasattr(_tooltip_integration, "form_button_with_validation"):
-        _tooltip_integration = StreamlitTooltipIntegration()
-    return _tooltip_integration
+# In src/ui/tooltip_integration.py
 
-# Convenience functions for common use cases
-def tooltip_button(label: str, tooltip_id: str, **kwargs) -> bool:
-    return get_tooltip_integration().button_with_tooltip(label, tooltip_id, **kwargs)
+def get_tooltip_integration() -> TooltipIntegration:
+    """Get global tooltip integration instance."""
+    global _tooltip_integration_instance
+    if _tooltip_integration_instance is None:
+        _tooltip_integration_instance = TooltipIntegration()
+    return _tooltip_integration_instance
 
-def tooltip_input(label: str, tooltip_id: str, **kwargs) -> str:
-    return get_tooltip_integration().text_input_with_tooltip(label, tooltip_id, **kwargs)
+def tooltip_input(label, tooltip, *args, **kwargs):
+    """
+    Wrapper for streamlit.text_input with tooltip support.
+    """
+    st.markdown(f"**{label}**  \n<span style='font-size:smaller;color:gray'>{tooltip}</span>", unsafe_allow_html=True)
+    return st.text_input("", *args, **kwargs)
+    
+def tooltip_button(label, tooltip, *args, **kwargs):
+    """Button mit Tooltip."""
+    st.markdown(f"**{label}**  \n<span style='font-size:smaller;color:gray'>{tooltip}</span>", unsafe_allow_html=True)
+    return st.button("", *args, **kwargs)
 
-def tooltip_checkbox(label: str, tooltip_id: str, **kwargs) -> bool:
-    return get_tooltip_integration().checkbox_with_tooltip(label, tooltip_id, **kwargs)
 
-def tooltip_selectbox(label: str, tooltip_id: str, options: list, **kwargs) -> Any:
-    return get_tooltip_integration().selectbox_with_tooltip(label, tooltip_id, options, **kwargs)
 
-def consent_checkbox(label: str, tooltip_id: str, user_id: UUID, consent_type: str, **kwargs) -> bool:
-    return get_tooltip_integration().consent_checkbox_with_context(label, tooltip_id, user_id, consent_type, **kwargs)
+def tooltip_checkbox(label, tooltip, *args, **kwargs):
+    st.markdown(f"{label} <span style='font-size:smaller;color:gray'>{tooltip}</span>", unsafe_allow_html=True)
+    return st.checkbox("", *args, **kwargs)
 
-def prerequisite_button(label: str, tooltip_id: str, prerequisites_met: bool, **kwargs) -> bool:
-    return get_tooltip_integration().prerequisite_button(label, tooltip_id, prerequisites_met, **kwargs)
+def tooltip_selectbox(label, tooltip, options, *args, **kwargs):
+    st.markdown(f"{label} <span style='font-size:smaller;color:gray'>{tooltip}</span>", unsafe_allow_html=True)
+    return st.selectbox("", options, *args, **kwargs)
 
 def form_submit_button(
     label: str,
     tooltip_id: str,
-    *,
     form_valid: bool = True,
-    validation_errors: Optional[List[str]] = None,
-    **kwargs,
+    disabled: Optional[bool] = None,
+    help: Optional[str] = None,
+    **kwargs
 ) -> bool:
     """
-    Module-level wrapper used by UI code (e.g., auth_ui.py).
-    Must be called INSIDE a `with st.form(...):` block.
+    Global wrapper function for form submit buttons with validation.
+    KORRIGIERTE VERSION - ohne key parameter.
     """
     return get_tooltip_integration().form_button_with_validation(
         label=label,
         tooltip_id=tooltip_id,
         form_valid=form_valid,
-        validation_errors=validation_errors,
-        **kwargs,
+        disabled=disabled,
+        help=help,
+        **kwargs
     )
+
+
+def register_tooltip(tooltip_id: str, text: str) -> None:
+    """Register a tooltip globally."""
+    get_tooltip_integration().register_tooltip(tooltip_id, text)
+
+
+def get_tooltip_text(tooltip_id: str) -> Optional[str]:
+    """Get tooltip text globally."""
+    return get_tooltip_integration().get_tooltip_text(tooltip_id)
