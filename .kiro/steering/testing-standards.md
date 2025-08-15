@@ -23,7 +23,9 @@
 ## 4. Mock Policy
 - **No use of mocking/patching libraries**:
   - Disallow: `unittest.mock`, `pytest-mock`, `monkeypatch`, `responses`, `requests_mock`
-  - No fake implementations to bypass core logic
+  - Exception: `monkeypatch` is allowed **only for reproducible 3rd-party/framework bugs** that cannot be fixed otherwise (e.g., StableDiffusion blocking Streamlit run loop).
+    - Must be documented with comment `# allowed-monkeypatch: <short reason>` directly above usage.
+- No fake implementations to bypass core logic.
 - Replace with:
   - Pure functions for core logic (test directly)
   - Real adapters tested via ports (contract tests)
@@ -37,10 +39,10 @@ Every new feature or refactor must include **at least**:
 
 ## 6. Test Structure
 tests/
-  - contracts/  # Contract tests for ports/adapters
-  - properties/ # Hypothesis property tests
-  - types/      # Type-oriented tests
-  - factories/  # Data builders/factories for tests
+  - contracts/   # Contract tests for ports/adapters
+  - properties/  # Hypothesis property tests
+  - types/       # Type-oriented tests
+  - factories/   # Data builders/factories for tests
 
 ## 7. Markers & CI
 - Markers: `slow`, `gpu`, `e2e`

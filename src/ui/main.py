@@ -1,3 +1,14 @@
+#allowed monkey patch for stable diffusion
+import os
+os.environ.setdefault("STREAMLIT_SERVER_FILE_WATCHER_TYPE", "none")
+
+try:
+    import torch
+    if not hasattr(torch.classes, "__path__") or not isinstance(torch.classes.__path__, list):
+        torch.classes.__path__ = []
+except Exception:
+    pass
+
 """
 Main Streamlit application entry point for GITTE.
 Implements the guided onboarding flow and main application interface.
@@ -28,12 +39,17 @@ from src.ui.tooltip_integration import get_tooltip_integration, tooltip_button
 
 def main():
     """Main application entry point."""
-    st.set_page_config(
-        page_title=get_text("app_title"),
-        page_icon="🤖",
-        layout="wide",
-        initial_sidebar_state="expanded",
-    )
+    # Set page config FIRST before any other Streamlit operations
+    try:
+        st.set_page_config(
+            page_title=get_text("app_title"),
+            page_icon="🤖",
+            layout="wide",
+            initial_sidebar_state="expanded",
+        )
+    except st.errors.StreamlitAPIException:
+        # Page config already set, ignore
+        pass
 
     # Apply comprehensive accessibility features
     apply_accessibility_features()

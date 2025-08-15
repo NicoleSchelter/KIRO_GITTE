@@ -6,11 +6,12 @@
   1. Syntax/format fixes (unterminated strings, broken imports, line endings).
   2. Refactor-induced path/API adjustments when the public contract changed per updated spec.
   3. Stabilizing flaky tests (freeze time via Clock, seed RNG via Rng, use temp dirs) without weakening assertions.
+  4. Adding or modifying `# allowed-monkeypatch` comments for permitted framework bug workarounds.
 - Any commit modifying `tests/` outside `tests/contracts/`, `tests/properties/`, `tests/types/` must:
   - Include `[ALLOW-TEST-CHANGE]` in the commit subject.
   - Explain **Reason**, **Spec Reference**, **Scope**, and **Before→After** in the commit body.
 - Prefer fixing implementation code over tests.
-- **No mocks**: Do not introduce or reintroduce mocking/patching libs (see Testing Standards).
+- **No mocks**: Do not introduce mocking/patching libs except where explicitly allowed (see Testing Standards).
 
 ## 2. Layered Architecture
 - Maintain strict separation:
@@ -21,6 +22,7 @@
 - Ports (interfaces) live in Logic/Service level, adapters in Service level
 - Contract tests verify adapters through their ports
 - No cross-layer calls except via defined interfaces
+- **Performance**: Heavy modules (e.g., StableDiffusion, large models) must be lazy-loaded in Streamlit so they initialize only when needed.
 
 ## 3. Task Execution
 - Complete all subtasks before marking a task as done

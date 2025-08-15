@@ -72,16 +72,15 @@ class AuthenticationUI:
             username = tooltip_input(
                 "Username",
                 "username_input",
-                placeholder="Enter your username",
-                help="Enter the username you created when registering"
+                placeholder="Enter your username"
             )
 
             # Enhanced password input with accessibility features
-            password = st.text_input(
+            password = self.tooltip_integration.text_input_with_tooltip(
                 "Password",
+                "password_input",
                 type="password",
-                placeholder="Enter your password",
-                help=self.tooltip_integration.tooltip_manager.get_tooltip_for_element("password_input") or "Enter your account password"
+                placeholder="Enter your password"
             )
             
             # Add password visibility toggle (conceptual - would need custom implementation)
@@ -99,14 +98,16 @@ class AuthenticationUI:
             with col1:
                 login_submitted = st.form_submit_button(
                     "🔑 Sign In", 
-                    type="primary",
-                    help=self.tooltip_integration.tooltip_manager.get_tooltip_for_element("login_button") or "Sign in to your GITTE account"
+                    type="primary"
                 )
 
             with col2:
-                if st.form_submit_button("👤 New User? Register"):
-                    st.session_state.show_registration = True
-                    st.rerun()
+                register_submitted = st.form_submit_button("👤 New User? Register")
+                
+            # Handle form submissions
+            if register_submitted:
+                st.session_state.show_registration = True
+                st.rerun()
             
             # Add keyboard shortcuts info
             st.markdown(
@@ -280,7 +281,7 @@ class AuthenticationUI:
                     "register_submit_button",
                     form_valid=form_valid,
                     validation_errors=validation_errors,
-                    type="primary"
+                    type="primary",  # erlaubt; wir verhindern Doppelsendung intern
                 )
 
             with col2:
