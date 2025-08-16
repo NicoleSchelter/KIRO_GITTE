@@ -661,3 +661,59 @@ class PALDEvolutionService:
             "misc": "appearance",  # Default to appearance for uncategorized
         }
         return mapping.get(category, "appearance")
+
+
+class EnhancedPALDService:
+    """Enhanced PALD service with integration to new components."""
+    
+    def __init__(self, db_session: Session):
+        self.db_session = db_session
+        self.pald_manager = None  # Will be set by logic layer
+        
+    def set_pald_manager(self, pald_manager):
+        """Set the PALD manager instance."""
+        self.pald_manager = pald_manager
+    
+    def process_pald_request(self, request_data: dict[str, Any]) -> dict[str, Any]:
+        """Process enhanced PALD request through the manager."""
+        if not self.pald_manager:
+            raise ValueError("PALD manager not initialized")
+        
+        from src.logic.pald import PALDProcessingRequest
+        from uuid import UUID
+        
+        # Convert request data to PALDProcessingRequest
+        request = PALDProcessingRequest(
+            user_id=UUID(request_data["user_id"]),
+            session_id=request_data["session_id"],
+            description_text=request_data["description_text"],
+            embodiment_caption=request_data.get("embodiment_caption"),
+            defer_bias_scan=request_data.get("defer_bias_scan", True),
+            processing_options=request_data.get("processing_options", {})
+        )
+        
+        # Process through enhanced PALD manager
+        response = self.pald_manager.process_enhanced_pald(request)
+        
+        # Convert response to dictionary
+        return {
+            "pald_light": response.pald_light,
+            "pald_diff_summary": response.pald_diff_summary,
+            "defer_notice": response.defer_notice,
+            "validation_errors": response.validation_errors,
+            "processing_metadata": response.processing_metadata
+        }
+    
+    def get_bias_job_status(self, job_id: str) -> dict[str, Any]:
+        """Get bias analysis job status."""
+        if not self.pald_manager:
+            raise ValueError("PALD manager not initialized")
+        
+        return self.pald_manager.get_bias_job_status(job_id)
+    
+    def process_bias_queue(self, batch_size: int | None = None) -> dict[str, Any]:
+        """Process bias analysis job queue."""
+        if not self.pald_manager:
+            raise ValueError("PALD manager not initialized")
+        
+        return self.pald_manager.process_bias_job_queue(batch_size)

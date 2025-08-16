@@ -323,6 +323,7 @@ try:
     from .feature_flags import feature_flag_manager, get_flag, is_enabled, set_flag
     from .text_management import get_text, set_language, text_manager
     from .validation import config_validator, validate_configuration, validate_runtime
+    from .pald_enhancement import pald_enhancement_config, schema_loader, schema_evolution_manager
 
     # Validate configuration on startup
     validation_result = validate_configuration(config)

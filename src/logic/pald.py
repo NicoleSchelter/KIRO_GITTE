@@ -1,6 +1,7 @@
 """
 PALD Logic Layer
 Business logic for PALD schema management, validation, and evolution.
+Enhanced with PALD Light extraction, bias analysis, and diff calculation.
 """
 
 import logging
@@ -11,6 +12,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from config.config import config
+from config.pald_enhancement import pald_enhancement_config
 from src.data.models import PALDAttributeCandidate, PALDData, PALDSchemaVersion
 from src.data.repositories import PALDDataRepository
 from src.data.schemas import (
@@ -23,18 +25,53 @@ from src.data.schemas import (
     PALDValidationResult,
 )
 from src.services.pald_service import PALDEvolutionService, PALDSchemaService
+from src.logic.pald_light_extraction import PALDLightExtractor, PALDLightResult
+from src.logic.bias_analysis import BiasAnalysisEngine, BiasJobManager, BiasAnalysisJob, BiasType, JobStatus, bias_job_manager
+from src.logic.pald_diff_calculation import PALDDiffCalculator, PALDPersistenceManager, PALDDiffResult
 
 logger = logging.getLogger(__name__)
 
 
+# Enhanced PALD data classes
+from dataclasses import dataclass, field
+
+
+@dataclass
+class PALDProcessingRequest:
+    """Request for PALD processing."""
+    user_id: UUID
+    session_id: str
+    description_text: str
+    embodiment_caption: str | None = None
+    defer_bias_scan: bool = True
+    processing_options: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class PALDProcessingResponse:
+    """Response from PALD processing."""
+    pald_light: dict[str, Any]
+    pald_diff_summary: str | None = None
+    defer_notice: str | None = None
+    validation_errors: list[str] = field(default_factory=list)
+    processing_metadata: dict[str, Any] = field(default_factory=dict)
+
+
 class PALDManager:
-    """Business logic manager for PALD operations."""
+    """Business logic manager for PALD operations with enhanced capabilities."""
 
     def __init__(self, db_session: Session):
         self.db_session = db_session
         self.repository = PALDDataRepository(db_session)
         self.schema_service = PALDSchemaService(db_session)
         self.evolution_service = PALDEvolutionService(db_session)
+        
+        # Enhanced PALD components
+        self.pald_extractor = PALDLightExtractor()
+        self.bias_analyzer = BiasAnalysisEngine()
+        self.bias_job_manager = bias_job_manager  # Use global instance
+        self.diff_calculator = PALDDiffCalculator()
+        self.persistence_manager = PALDPersistenceManager()
 
     def create_pald_data(self, user_id: UUID, pald_create: PALDDataCreate) -> PALDDataResponse:
         """Create new PALD data for a user."""
@@ -261,6 +298,225 @@ class PALDManager:
         )
 
         return migration_results
+
+    def process_enhanced_pald(self, request: PALDProcessingRequest) -> PALDProcessingResponse:
+        """Process PALD with enhanced capabilities including mandatory extraction and optional bias analysis."""
+        try:
+            logger.info(f"Processing enhanced PALD for session {request.session_id}")
+            
+            # Step 1: Mandatory PALD Light extraction (always performed)
+            pald_light_result = self._extract_pald_light(request)
+            
+            # Step 2: Calculate diff if embodiment caption is provided
+            pald_diff_result = None
+            if request.embodiment_caption:
+                pald_diff_result = self._calculate_pald_diff(request, pald_light_result)
+            
+            # Step 3: Handle bias analysis (deferred or immediate based on configuration)
+            defer_notice = None
+            if pald_enhancement_config.enable_bias_analysis:
+                defer_notice = self._handle_bias_analysis(request, pald_light_result, pald_diff_result)
+            
+            # Step 4: Persist PALD artifacts
+            artifact_id = self._persist_pald_artifacts(request, pald_light_result, pald_diff_result)
+            
+            # Step 5: Create response
+            response = PALDProcessingResponse(
+                pald_light=pald_light_result.pald_light,
+                pald_diff_summary=pald_diff_result.summary if pald_diff_result else None,
+                defer_notice=defer_notice,
+                validation_errors=pald_light_result.validation_errors,
+                processing_metadata={
+                    "artifact_id": artifact_id,
+                    "extraction_confidence": pald_light_result.extraction_confidence,
+                    "compressed_prompt": pald_light_result.compressed_prompt,
+                    "processing_timestamp": datetime.now().isoformat()
+                }
+            )
+            
+            logger.info(f"Enhanced PALD processing completed for session {request.session_id}")
+            return response
+            
+        except Exception as e:
+            logger.error(f"Enhanced PALD processing failed for session {request.session_id}: {e}")
+            return self._create_error_response(str(e))
+    
+    def _extract_pald_light(self, request: PALDProcessingRequest) -> PALDLightResult:
+        """Extract mandatory PALD Light data."""
+        try:
+            return self.pald_extractor.extract_from_text(
+                description_text=request.description_text,
+                embodiment_caption=request.embodiment_caption
+            )
+        except Exception as e:
+            logger.error(f"PALD Light extraction failed: {e}")
+            # Return minimal fallback result
+            return PALDLightResult(
+                pald_light={"global_design_level": {"type": "human"}},
+                extraction_confidence=0.0,
+                filled_fields=[],
+                missing_fields=[],
+                validation_errors=[f"Extraction failed: {str(e)}"],
+                compressed_prompt="person"
+            )
+    
+    def _calculate_pald_diff(self, request: PALDProcessingRequest, pald_light_result: PALDLightResult) -> PALDDiffResult | None:
+        """Calculate diff between description and embodiment PALDs."""
+        try:
+            # Extract PALD from embodiment caption separately
+            embodiment_result = self.pald_extractor.extract_from_text(
+                description_text="",
+                embodiment_caption=request.embodiment_caption or ""
+            )
+            
+            # Calculate diff
+            return self.diff_calculator.calculate_diff(
+                description_pald=pald_light_result.pald_light,
+                embodiment_pald=embodiment_result.pald_light
+            )
+        except Exception as e:
+            logger.error(f"PALD diff calculation failed: {e}")
+            return None
+    
+    def _handle_bias_analysis(
+        self, 
+        request: PALDProcessingRequest, 
+        pald_light_result: PALDLightResult, 
+        pald_diff_result: PALDDiffResult | None
+    ) -> str | None:
+        """Handle bias analysis based on configuration."""
+        try:
+            if not pald_enhancement_config.enable_bias_analysis:
+                return None
+            
+            # Determine analysis types to perform
+            analysis_types = self._get_enabled_analysis_types()
+            
+            if request.defer_bias_scan or pald_enhancement_config.pald_analysis_deferred:
+                # Create deferred bias job
+                job_id = self.bias_job_manager.create_bias_job(
+                    session_id=request.session_id,
+                    description_pald=pald_light_result.pald_light,
+                    embodiment_pald=pald_diff_result.hallucinations if pald_diff_result else {},
+                    analysis_types=analysis_types,
+                    priority=1
+                )
+                return f"Bias analysis queued for post-session processing (Job ID: {job_id})"
+            else:
+                # Perform immediate bias analysis
+                self._perform_immediate_bias_analysis(request, pald_light_result, analysis_types)
+                return None
+                
+        except Exception as e:
+            logger.error(f"Bias analysis handling failed: {e}")
+            return f"Bias analysis failed: {str(e)}"
+    
+    def _get_enabled_analysis_types(self) -> list[BiasType]:
+        """Get list of enabled bias analysis types."""
+        enabled_types = []
+        
+        if pald_enhancement_config.enable_age_shift_analysis:
+            enabled_types.append(BiasType.AGE_SHIFT)
+        if pald_enhancement_config.enable_gender_conformity_analysis:
+            enabled_types.append(BiasType.GENDER_CONFORMITY)
+        if pald_enhancement_config.enable_ethnicity_analysis:
+            enabled_types.append(BiasType.ETHNICITY_CONSISTENCY)
+        if pald_enhancement_config.enable_occupational_stereotype_analysis:
+            enabled_types.append(BiasType.OCCUPATIONAL_STEREOTYPES)
+        if pald_enhancement_config.enable_ambivalent_stereotype_analysis:
+            enabled_types.append(BiasType.AMBIVALENT_STEREOTYPES)
+        if pald_enhancement_config.enable_multiple_stereotyping_analysis:
+            enabled_types.append(BiasType.MULTIPLE_STEREOTYPING)
+            
+        return enabled_types
+    
+    def _perform_immediate_bias_analysis(
+        self, 
+        request: PALDProcessingRequest, 
+        pald_light_result: PALDLightResult, 
+        analysis_types: list[BiasType]
+    ):
+        """Perform immediate bias analysis."""
+        try:
+            # This would perform immediate analysis - for now just log
+            logger.info(f"Performing immediate bias analysis for session {request.session_id}")
+            # Implementation would call bias_analyzer methods directly
+        except Exception as e:
+            logger.error(f"Immediate bias analysis failed: {e}")
+    
+    def _persist_pald_artifacts(
+        self, 
+        request: PALDProcessingRequest, 
+        pald_light_result: PALDLightResult, 
+        pald_diff_result: PALDDiffResult | None
+    ) -> str:
+        """Persist PALD artifacts with pseudonymization."""
+        try:
+            return self.persistence_manager.create_artifact(
+                session_id=request.session_id,
+                user_id=str(request.user_id),
+                description_text=request.description_text,
+                embodiment_caption=request.embodiment_caption,
+                pald_light=pald_light_result.pald_light,
+                pald_diff=pald_diff_result,
+                processing_metadata=pald_light_result.processing_metadata
+            )
+        except Exception as e:
+            logger.error(f"PALD artifact persistence failed: {e}")
+            return "persistence_failed"
+    
+    def _create_error_response(self, error_message: str) -> PALDProcessingResponse:
+        """Create error response for failed processing."""
+        return PALDProcessingResponse(
+            pald_light={"global_design_level": {"type": "human"}},
+            pald_diff_summary=None,
+            defer_notice=None,
+            validation_errors=[error_message],
+            processing_metadata={
+                "error": True,
+                "error_message": error_message,
+                "processing_timestamp": datetime.now().isoformat()
+            }
+        )
+
+    def get_bias_job_status(self, job_id: str) -> dict[str, Any]:
+        """Get status of a bias analysis job."""
+        try:
+            status = self.bias_job_manager.get_job_status(job_id)
+            return {
+                "job_id": job_id,
+                "status": status.value if status else "not_found",
+                "message": f"Job status: {status.value}" if status else "Job not found"
+            }
+        except Exception as e:
+            logger.error(f"Error getting bias job status: {e}")
+            return {
+                "job_id": job_id,
+                "status": "error",
+                "message": f"Error retrieving status: {str(e)}"
+            }
+
+    def process_bias_job_queue(self, batch_size: int | None = None) -> dict[str, Any]:
+        """Process queued bias analysis jobs."""
+        try:
+            batch_size = batch_size or pald_enhancement_config.bias_job_batch_size
+            results = self.bias_job_manager.process_bias_queue(batch_size)
+            
+            return {
+                "processed_jobs": len(results),
+                "successful_jobs": len([r for r in results if r.status == JobStatus.COMPLETED]),
+                "failed_jobs": len([r for r in results if r.status == JobStatus.FAILED]),
+                "processing_timestamp": datetime.now().isoformat()
+            }
+        except Exception as e:
+            logger.error(f"Error processing bias job queue: {e}")
+            return {
+                "processed_jobs": 0,
+                "successful_jobs": 0,
+                "failed_jobs": 0,
+                "error": str(e),
+                "processing_timestamp": datetime.now().isoformat()
+            }
 
 
 class PALDSchemaManager:
