@@ -1,0 +1,860 @@
+diff --git a/pald/schema/evolution.py b/pald/schema/evolution.py
+new file mode 100644
+index 0000000..1234567
+--- /dev/null
++++ b/pald/schema/evolution.py
+@@ -0,0 +1,156 @@
++"""
++PALD Schema Evolution Manager MVP.
++Detects new fields in PALD data and queues them for schema evolution.
++"""
++
++import logging
++from datetime import datetime
++from typing import Any, Dict, List, Set
++
++from sqlalchemy.orm import Session
++
++from src.data.models import PALDSchemaFieldCandidate, PALDProcessingLog
++from src.data.database import get_session
++from config.config import config
++
++logger = logging.getLogger(__name__)
++
++
++class SchemaEvolutionManager:
++    """Manages PALD schema evolution by detecting and queuing new fields."""
++
++    def __init__(self, threshold: int = None):
++        """Initialize with detection threshold."""
++        self.threshold = threshold or config.pald_enhancement.schema_evolution_threshold
++        self.known_fields: Set[str] = set()
++        self._load_known_fields()
++
++    def _load_known_fields(self) -> None:
++        """Load currently known schema fields."""
++        try:
++            with get_session() as session:
++                candidates = session.query(PALDSchemaFieldCandidate).filter(
++                    PALDSchemaFieldCandidate.added_to_schema == True
++                ).all()
++                self.known_fields = {c.field_name for c in candidates}
++                logger.debug(f"Loaded {len(self.known_fields)} known schema fields")
++        except Exception as e:
++            logger.error(f"Failed to load known fields: {e}")
++            self.known_fields = set()
++
++    def detect_new_fields(self, pald_data: Dict[str, Any], session_id: str) -> List[str]:
++        """
++        Detect new fields in PALD data that aren't in current schema.
++        
++        Args:
++            pald_data: PALD data dictionary to analyze
++            session_id: Session identifier for tracking
++            
++        Returns:
++            List of newly detected field names
++        """
++        if not isinstance(pald_data, dict):
++            return []
++
++        detected_fields = []
++        current_fields = self._extract_field_names(pald_data)
++        
++        for field_name in current_fields:
++            if field_name not in self.known_fields:
++                detected_fields.append(field_name)
++                self._queue_field_candidate(field_name, session_id)
++
++        if detected_fields:
++            logger.info(f"Detected {len(detected_fields)} new fields: {detected_fields}")
++
++        return detected_fields
++
++    def _extract_field_names(self, data: Dict[str, Any], prefix: str = "") -> Set[str]:
++        """Recursively extract field names from nested dictionary."""
++        fields = set()
++        
++        for key, value in data.items():
++            field_name = f"{prefix}.{key}" if prefix else key
++            fields.add(field_name)
++            
++            if isinstance(value, dict):
++                fields.update(self._extract_field_names(value, field_name))
++            elif isinstance(value, list) and value and isinstance(value[0], dict):
++                # Handle arrays of objects
++                fields.update(self._extract_field_names(value[0], f"{field_name}[]"))
++
++        return fields
++
++    def _queue_field_candidate(self, field_name: str, session_id: str) -> None:
++        """Queue a field candidate for potential schema inclusion."""
++        try:
++            with get_session() as session:
++                # Check if candidate already exists
++                existing = session.query(PALDSchemaFieldCandidate).filter(
++                    PALDSchemaFieldCandidate.field_name == field_name
++                ).first()
++
++                if existing:
++                    # Update mention count and timestamp
++                    existing.mention_count += 1
++                    existing.last_mentioned = datetime.utcnow()
++                    
++                    # Check if threshold reached
++                    if existing.mention_count >= self.threshold and not existing.threshold_reached:
++                        existing.threshold_reached = True
++                        logger.info(f"Field '{field_name}' reached threshold ({existing.mention_count})")
++                else:
++                    # Create new candidate
++                    candidate = PALDSchemaFieldCandidate(
++                        field_name=field_name,
++                        field_category=self._categorize_field(field_name),
++                        mention_count=1,
++                        first_detected=datetime.utcnow(),
++                        last_mentioned=datetime.utcnow()
++                    )
++                    session.add(candidate)
++
++                # Log the detection
++                log_entry = PALDProcessingLog(
++                    session_id=session_id,
++                    processing_stage="schema_evolution",
++                    operation="field_detection",
++                    status="completed",
++                    details={"detected_field": field_name}
++                )
++                session.add(log_entry)
++
++        except Exception as e:
++            logger.error(f"Failed to queue field candidate '{field_name}': {e}")
++
++    def _categorize_field(self, field_name: str) -> str:
++        """Categorize field based on name patterns."""
++        field_lower = field_name.lower()
++        
++        if any(term in field_lower for term in ['age', 'birth', 'year']):
++            return 'demographic'
++        elif any(term in field_lower for term in ['gender', 'sex', 'pronoun']):
++            return 'gender'
++        elif any(term in field_lower for term in ['race', 'ethnic', 'nationality']):
++            return 'ethnicity'
++        elif any(term in field_lower for term in ['job', 'occupation', 'profession', 'work']):
++            return 'occupation'
++        elif any(term in field_lower for term in ['appearance', 'look', 'style', 'clothing']):
++            return 'appearance'
++        elif any(term in field_lower for term in ['personality', 'trait', 'behavior']):
++            return 'personality'
++        else:
++            return 'other'
++
++    def get_pending_candidates(self) -> List[PALDSchemaFieldCandidate]:
++        """Get field candidates that have reached threshold but not added to schema."""
++        try:
++            with get_session() as session:
++                return session.query(PALDSchemaFieldCandidate).filter(
++                    PALDSchemaFieldCandidate.threshold_reached == True,
++                    PALDSchemaFieldCandidate.added_to_schema == False
++                ).all()
++        except Exception as e:
++            logger.error(f"Failed to get pending candidates: {e}")
++            return []
++
++    def mark_field_added(self, field_name: str, schema_version: str) -> bool:
++        """Mark a field as added to schema."""
++        try:
++            with get_session() as session:
++                candidate = session.query(PALDSchemaFieldCandidate).filter(
++                    PALDSchemaFieldCandidate.field_name == field_name
++                ).first()
++                
++                if candidate:
++                    candidate.added_to_schema = True
++                    candidate.schema_version_added = schema_version
++                    self.known_fields.add(field_name)
++                    logger.info(f"Marked field '{field_name}' as added to schema v{schema_version}")
++                    return True
++                    
++        except Exception as e:
++            logger.error(f"Failed to mark field '{field_name}' as added: {e}")
++            
++        return False
+diff --git a/data/migrations/001_pald_enhancement_tables.py b/data/migrations/001_pald_enhancement_tables.py
+new file mode 100644
+index 0000000..1234567
+--- /dev/null
++++ b/data/migrations/001_pald_enhancement_tables.py
+@@ -0,0 +1,89 @@
++"""Add PALD enhancement tables
++
++Revision ID: 001_pald_enhancement
++Revises: base
++Create Date: 2025-01-16 10:00:00.000000
++
++"""
++from alembic import op
++import sqlalchemy as sa
++from sqlalchemy.dialects import postgresql
++
++# revision identifiers
++revision = '001_pald_enhancement'
++down_revision = 'base'
++branch_labels = None
++depends_on = None
++
++
++def upgrade():
++    # Create schema_field_candidates table
++    op.create_table('schema_field_candidates',
++        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
++        sa.Column('field_name', sa.String(length=255), nullable=False),
++        sa.Column('field_category', sa.String(length=100), nullable=True),
++        sa.Column('mention_count', sa.Integer(), nullable=False, default=1),
++        sa.Column('first_detected', sa.DateTime(), nullable=False),
++        sa.Column('last_mentioned', sa.DateTime(), nullable=False),
++        sa.Column('threshold_reached', sa.Boolean(), nullable=False, default=False),
++        sa.Column('added_to_schema', sa.Boolean(), nullable=False, default=False),
++        sa.Column('schema_version_added', sa.String(length=50), nullable=True),
++        sa.Column('created_at', sa.DateTime(), nullable=False),
++        sa.Column('updated_at', sa.DateTime(), nullable=False),
++        sa.PrimaryKeyConstraint('id')
++    )
++    op.create_index('idx_schema_field_name', 'schema_field_candidates', ['field_name'])
++    op.create_index('idx_schema_field_threshold', 'schema_field_candidates', ['threshold_reached'])
++    op.create_index('idx_schema_field_added', 'schema_field_candidates', ['added_to_schema'])
++    op.create_index('idx_schema_field_category', 'schema_field_candidates', ['field_category'])
++
++    # Create pald_processing_logs table
++    op.create_table('pald_processing_logs',
++        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
++        sa.Column('session_id', sa.String(length=255), nullable=False),
++        sa.Column('processing_stage', sa.String(length=100), nullable=False),
++        sa.Column('operation', sa.String(length=100), nullable=False),
++        sa.Column('status', sa.String(length=50), nullable=False),
++        sa.Column('start_time', sa.DateTime(), nullable=False),
++        sa.Column('end_time', sa.DateTime(), nullable=True),
++        sa.Column('duration_ms', sa.Integer(), nullable=True),
++        sa.Column('details', sa.JSON(), nullable=True),
++        sa.Column('error_message', sa.Text(), nullable=True),
++        sa.Column('created_at', sa.DateTime(), nullable=False),
++        sa.PrimaryKeyConstraint('id')
++    )
++    op.create_index('idx_pald_log_session', 'pald_processing_logs', ['session_id'])
++    op.create_index('idx_pald_log_stage', 'pald_processing_logs', ['processing_stage'])
++    op.create_index('idx_pald_log_status', 'pald_processing_logs', ['status'])
++    op.create_index('idx_pald_log_created', 'pald_processing_logs', ['created_at'])
++
++    # Create bias_analysis_jobs table
++    op.create_table('bias_analysis_jobs',
++        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
++        sa.Column('session_id', sa.String(length=255), nullable=False),
++        sa.Column('pald_data', sa.JSON(), nullable=False),
++        sa.Column('analysis_types', sa.JSON(), nullable=False),
++        sa.Column('priority', sa.Integer(), nullable=False, default=5),
++        sa.Column('status', sa.String(length=50), nullable=False, default='pending'),
++        sa.Column('retry_count', sa.Integer(), nullable=False, default=0),
++        sa.Column('max_retries', sa.Integer(), nullable=False, default=3),
++        sa.Column('scheduled_at', sa.DateTime(), nullable=False),
++        sa.Column('started_at', sa.DateTime(), nullable=True),
++        sa.Column('completed_at', sa.DateTime(), nullable=True),
++        sa.Column('error_message', sa.Text(), nullable=True),
++        sa.Column('created_at', sa.DateTime(), nullable=False),
++        sa.Column('updated_at', sa.DateTime(), nullable=False),
++        sa.PrimaryKeyConstraint('id')
++    )
++    op.create_index('idx_bias_job_session', 'bias_analysis_jobs', ['session_id'])
++    op.create_index('idx_bias_job_status', 'bias_analysis_jobs', ['status'])
++    op.create_index('idx_bias_job_scheduled', 'bias_analysis_jobs', ['scheduled_at'])
++    op.create_index('idx_bias_job_priority', 'bias_analysis_jobs', ['priority'])
++
++    # Create bias_analysis_results table
++    op.create_table('bias_analysis_results',
++        sa.Column('id', postgresql.UUID(as_uuid=True), nullable=False),
++        sa.Column('job_id', postgresql.UUID(as_uuid=True), nullable=False),
++        sa.Column('session_id', sa.String(length=255), nullable=False),
++        sa.Column('analysis_type', sa.String(length=100), nullable=False),
++        sa.Column('bias_detected', sa.Boolean(), nullable=False),
++        sa.Column('confidence_score', sa.Float(), nullable=False),
++        sa.Column('bias_indicators', sa.JSON(), nullable=True),
++        sa.Column('analysis_details', sa.JSON(), nullable=True),
++        sa.Column('processing_time_ms', sa.Integer(), nullable=True),
++        sa.Column('created_at', sa.DateTime(), nullable=False),
++        sa.PrimaryKeyConstraint('id'),
++        sa.ForeignKeyConstraint(['job_id'], ['bias_analysis_jobs.id'], ondelete='CASCADE')
++    )
++    op.create_index('idx_bias_result_job', 'bias_analysis_results', ['job_id'])
++    op.create_index('idx_bias_result_session', 'bias_analysis_results', ['session_id'])
++    op.create_index('idx_bias_result_type', 'bias_analysis_results', ['analysis_type'])
++    op.create_index('idx_bias_result_detected', 'bias_analysis_results', ['bias_detected'])
++    op.create_index('idx_bias_result_created', 'bias_analysis_results', ['created_at'])
++
++
++def downgrade():
++    op.drop_table('bias_analysis_results')
++    op.drop_table('bias_analysis_jobs')
++    op.drop_table('pald_processing_logs')
++    op.drop_table('schema_field_candidates')
+diff --git a/src/data/models.py b/src/data/models.py
+index 1111111..2222222 100644
+--- a/src/data/models.py
++++ b/src/data/models.py
+@@ -8,6 +8,7 @@ Defines all SQLAlchemy models for users, consent, PALD, audit logs, and federat
+ 
+ from enum import Enum
+ from uuid import uuid4
++from datetime import datetime
+ 
+ from sqlalchemy import (
+     JSON,
+@@ -18,6 +19,7 @@ from sqlalchemy import (
+     Index,
+     Integer,
+     LargeBinary,
++    Float,
+     String,
+     Text,
+     func,
+@@ -70,6 +72,20 @@ class AuditLogStatus(str, Enum):
+     FINALIZED = "finalized"
+ 
+ 
++class BiasAnalysisJobStatus(str, Enum):
++    """Bias analysis job status enumeration."""
++    
++    PENDING = "pending"
++    RUNNING = "running"
++    COMPLETED = "completed"
++    FAILED = "failed"
++    CANCELLED = "cancelled"
++    RETRY = "retry"
++    DLQ = "dlq"  # Dead Letter Queue
++    TIMEOUT = "timeout"
++    PARTIAL = "partial"
++
++
+ class User(Base):
+     """User model for authentication and role management."""
+ 
+@@ -200,6 +216,134 @@ class PALDAttributeCandidate(Base):
+         return f"<PALDAttributeCandidate(id={self.id}, name={self.attribute_name}, count={self.mention_count})>"
+ 
+ 
++class PALDSchemaFieldCandidate(Base):
++    """PALD schema field candidate model for schema evolution tracking."""
++
++    __tablename__ = "schema_field_candidates"
++
++    id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
++    field_name = Column(String(255), nullable=False, index=True)
++    field_category = Column(String(100), nullable=True)
++    mention_count = Column(Integer, nullable=False, default=1)
++    first_detected = Column(DateTime, nullable=False, default=func.now())
++    last_mentioned = Column(DateTime, nullable=False, default=func.now())
++    threshold_reached = Column(Boolean, nullable=False, default=False)
++    added_to_schema = Column(Boolean, nullable=False, default=False)
++    schema_version_added = Column(String(50), nullable=True)
++    created_at = Column(DateTime, nullable=False, default=func.now())
++    updated_at = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
++
++    # Indexes
++    __table_args__ = (
++        Index("idx_schema_field_name", "field_name"),
++        Index("idx_schema_field_threshold", "threshold_reached"),
++        Index("idx_schema_field_added", "added_to_schema"),
++        Index("idx_schema_field_category", "field_category"),
++    )
++
++    def __repr__(self):
++        return f"<PALDSchemaFieldCandidate(id={self.id}, name={self.field_name}, count={self.mention_count})>"
++
++
++class PALDProcessingLog(Base):
++    """PALD processing log model for tracking processing stages and operations."""
++
++    __tablename__ = "pald_processing_logs"
++
++    id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
++    session_id = Column(String(255), nullable=False, index=True)
++    processing_stage = Column(String(100), nullable=False)  # extraction, validation, bias_analysis, etc.
++    operation = Column(String(100), nullable=False)  # field_detection, schema_validation, etc.
++    status = Column(String(50), nullable=False)  # started, completed, failed
++    start_time = Column(DateTime, nullable=False, default=func.now())
++    end_time = Column(DateTime, nullable=True)
++    duration_ms = Column(Integer, nullable=True)
++    details = Column(JSONColumn, nullable=True)  # Stage-specific details
++    error_message = Column(Text, nullable=True)
++    created_at = Column(DateTime, nullable=False, default=func.now())
++
++    # Indexes
++    __table_args__ = (
++        Index("idx_pald_log_session", "session_id"),
++        Index("idx_pald_log_stage", "processing_stage"),
++        Index("idx_pald_log_status", "status"),
++        Index("idx_pald_log_created", "created_at"),
++    )
++
++    def __repr__(self):
++        return f"<PALDProcessingLog(id={self.id}, session={self.session_id}, stage={self.processing_stage})>"
++
++
++class BiasAnalysisJob(Base):
++    """Bias analysis job model for deferred bias analysis processing."""
++
++    __tablename__ = "bias_analysis_jobs"
++
++    id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
++    session_id = Column(String(255), nullable=False, index=True)
++    pald_data = Column(JSONColumn, nullable=False)  # PALD data to analyze
++    analysis_types = Column(JSONColumn, nullable=False)  # List of analysis types to perform
++    priority = Column(Integer, nullable=False, default=5)  # 1=highest, 10=lowest
++    status = Column(String(50), nullable=False, default=BiasAnalysisJobStatus.PENDING.value)
++    retry_count = Column(Integer, nullable=False, default=0)
++    max_retries = Column(Integer, nullable=False, default=3)
++    scheduled_at = Column(DateTime, nullable=False, default=func.now())
++    started_at = Column(DateTime, nullable=True)
++    completed_at = Column(DateTime, nullable=True)
++    error_message = Column(Text, nullable=True)
++    created_at = Column(DateTime, nullable=False, default=func.now())
++    updated_at = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
++
++    # Relationships
++    results = relationship("BiasAnalysisResult", back_populates="job", cascade="all, delete-orphan")
++
++    # Indexes
++    __table_args__ = (
++        Index("idx_bias_job_session", "session_id"),
++        Index("idx_bias_job_status", "status"),
++        Index("idx_bias_job_scheduled", "scheduled_at"),
++        Index("idx_bias_job_priority", "priority"),
++    )
++
++    @validates("status")
++    def validate_status(self, key, status):
++        """Validate job status."""
++        if status not in [s.value for s in BiasAnalysisJobStatus]:
++            raise ValueError(f"Invalid status: {status}")
++        return status
++
++    def __repr__(self):
++        return f"<BiasAnalysisJob(id={self.id}, session={self.session_id}, status={self.status})>"
++
++
++class BiasAnalysisResult(Base):
++    """Bias analysis result model for storing analysis outcomes."""
++
++    __tablename__ = "bias_analysis_results"
++
++    id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
++    job_id = Column(PostgresUUID(as_uuid=True), ForeignKey("bias_analysis_jobs.id", ondelete="CASCADE"), nullable=False)
++    session_id = Column(String(255), nullable=False, index=True)
++    analysis_type = Column(String(100), nullable=False)  # age_shift, gender_conformity, etc.
++    bias_detected = Column(Boolean, nullable=False)
++    confidence_score = Column(Float, nullable=False)  # 0.0 to 1.0
++    bias_indicators = Column(JSONColumn, nullable=True)  # Specific bias indicators found
++    analysis_details = Column(JSONColumn, nullable=True)  # Detailed analysis results
++    processing_time_ms = Column(Integer, nullable=True)
++    created_at = Column(DateTime, nullable=False, default=func.now())
++
++    # Relationships
++    job = relationship("BiasAnalysisJob", back_populates="results")
++
++    # Indexes
++    __table_args__ = (
++        Index("idx_bias_result_job", "job_id"),
++        Index("idx_bias_result_session", "session_id"),
++        Index("idx_bias_result_type", "analysis_type"),
++        Index("idx_bias_result_detected", "bias_detected"),
++        Index("idx_bias_result_created", "created_at"),
++    )
++
++    def __repr__(self):
++        return f"<BiasAnalysisResult(id={self.id}, type={self.analysis_type}, detected={self.bias_detected})>"
++
++
+ class PALDData(Base):
+     """PALD data model for pedagogical agent level of design information."""
+ 
+diff --git a/config/config.py b/config/config.py
+index 1111111..2222222 100644
+--- a/config/config.py
++++ b/config/config.py
+@@ -4,6 +4,7 @@ Provides centralized configuration with environment variable overrides and feat
+ """
+ 
+ import os
++from pathlib import Path
+ from dataclasses import dataclass, field
+ from typing import Any
+ 
+@@ -200,6 +201,58 @@ class UXAuditConfig:
+             self.retention_days = int(env_retention)
+ 
+ 
++@dataclass
++class PALDEnhancementConfig:
++    """PALD Enhancement and Bias Analysis configuration."""
++
++    # Schema Evolution
++    schema_evolution_enabled: bool = True
++    schema_evolution_threshold: int = 5  # Mentions needed to queue field for schema inclusion
++    external_schema_path: str = "./config/pald_schema.json"
++    schema_validation_strict: bool = True
++    schema_auto_reload: bool = True
++    schema_reload_interval_seconds: int = 300  # 5 minutes
++
++    # PALD Light Extraction
++    pald_light_enabled: bool = True
++    pald_light_mandatory: bool = True  # Always extract PALD Light
++    pald_extraction_timeout_seconds: int = 30
++    pald_validation_enabled: bool = True
++    prompt_compression_enabled: bool = True
++    prompt_compression_max_length: int = 200
++
++    # Bias Analysis
++    bias_analysis_enabled: bool = True
++    bias_analysis_deferred: bool = True  # Process in background
++    bias_analysis_types: list = field(default_factory=lambda: [
++        "age_shift", "gender_conformity", "ethnicity", 
++        "occupational_stereotypes", "ambivalent_stereotypes", "multiple_stereotyping"
++    ])
++    bias_job_priority_default: int = 5
++    bias_job_max_retries: int = 3
++    bias_job_timeout_seconds: int = 120
++    bias_confidence_threshold: float = 0.7
++
++    # Processing & Storage
++    pald_diff_enabled: bool = True
++    pald_store_append_only: bool = True
++    pald_pseudonymization_enabled: bool = True
++    processing_log_enabled: bool = True
++    processing_log_retention_days: int = 30
++
++    def __post_init__(self):
++        """Override with environment variables."""
++        if env_enabled := os.getenv("PALD_ENHANCEMENT_ENABLED"):
++            self.pald_light_enabled = env_enabled.lower() == "true"
++        if env_schema_path := os.getenv("PALD_SCHEMA_PATH"):
++            self.external_schema_path = env_schema_path
++        if env_threshold := os.getenv("PALD_SCHEMA_THRESHOLD"):
++            self.schema_evolution_threshold = int(env_threshold)
++        if env_bias_enabled := os.getenv("PALD_BIAS_ANALYSIS_ENABLED"):
++            self.bias_analysis_enabled = env_bias_enabled.lower() == "true"
++        if env_timeout := os.getenv("PALD_EXTRACTION_TIMEOUT"):
++            self.pald_extraction_timeout_seconds = int(env_timeout)
++
+ @dataclass
+ class FeatureFlags:
+     """Feature flags for controlling system behavior."""
+@@ -220,6 +273,7 @@ class FeatureFlags:
+     enable_tooltip_system: bool = True
+     enable_prerequisite_checks: bool = True
+     enable_ux_audit_logging: bool = True
++    enable_pald_enhancement: bool = True
+ 
+     def __post_init__(self):
+         """Override feature flags from environment variables."""
+@@ -244,6 +298,7 @@ class Config:
+     tooltip: TooltipConfig = field(default_factory=TooltipConfig)
+     prerequisite: PrerequisiteConfig = field(default_factory=PrerequisiteConfig)
+     ux_audit: UXAuditConfig = field(default_factory=UXAuditConfig)
++    pald_enhancement: PALDEnhancementConfig = field(default_factory=PALDEnhancementConfig)
+     storage: StorageConfig = field(default_factory=StorageConfig)
+     security: SecurityConfig = field(default_factory=SecurityConfig)
+     federated_learning: FederatedLearningConfig = field(default_factory=FederatedLearningConfig)
+@@ -275,6 +330,15 @@ class Config:
+         if self.is_production:
+             if self.security.secret_key == "dev-secret-key-change-in-production":
+                 raise ValueError("SECRET_KEY must be set in production")
+             if self.security.encryption_key == "dev-encryption-key-change-in-production":
+                 raise ValueError("ENCRYPTION_KEY must be set in production")
++
++        # Validate PALD Enhancement configuration
++        if self.pald_enhancement.pald_light_enabled:
++            schema_path = Path(self.pald_enhancement.external_schema_path)
++            if not schema_path.exists():
++                if self.pald_enhancement.schema_validation_strict:
++                    raise ValueError(f"PALD schema file not found: {schema_path}")
++                else:
++                    print(f"Warning: PALD schema file not found: {schema_path}")
+ 
+ 
+ # Initialize configuration with environment-specific overrides
+diff --git a/docs/migrations.md b/docs/migrations.md
+new file mode 100644
+index 0000000..1234567
+--- /dev/null
++++ b/docs/migrations.md
+@@ -0,0 +1,89 @@
++# Database Migrations Guide
++
++This document describes the database migration system for GITTE and the PALD Enhancement feature.
++
++## Overview
++
++GITTE uses Alembic for database schema migrations. The PALD Enhancement feature introduces several new tables for schema evolution tracking, processing logs, and bias analysis job management.
++
++## Migration Files
++
++### 001_pald_enhancement_tables.py
++
++This migration adds the core tables for PALD Enhancement:
++
++#### schema_field_candidates
++Tracks potential new fields detected in PALD data for schema evolution.
++
++**Columns:**
++- `id` (UUID): Primary key
++- `field_name` (String): Name of the detected field
++- `field_category` (String): Categorization (demographic, gender, ethnicity, etc.)
++- `mention_count` (Integer): Number of times field has been detected
++- `first_detected` (DateTime): When field was first detected
++- `last_mentioned` (DateTime): Most recent detection
++- `threshold_reached` (Boolean): Whether field has reached inclusion threshold
++- `added_to_schema` (Boolean): Whether field has been added to schema
++- `schema_version_added` (String): Schema version when field was added
++
++**Indexes:**
++- `idx_schema_field_name`: On field_name for lookups
++- `idx_schema_field_threshold`: On threshold_reached for querying candidates
++- `idx_schema_field_added`: On added_to_schema for filtering
++- `idx_schema_field_category`: On field_category for categorization queries
++
++#### pald_processing_logs
++Tracks PALD processing stages and operations for debugging and monitoring.
++
++**Columns:**
++- `id` (UUID): Primary key
++- `session_id` (String): Session identifier for tracking
++- `processing_stage` (String): Stage of processing (extraction, validation, etc.)
++- `operation` (String): Specific operation (field_detection, schema_validation, etc.)
++- `status` (String): Operation status (started, completed, failed)
++- `start_time` (DateTime): When operation started
++- `end_time` (DateTime): When operation completed
++- `duration_ms` (Integer): Processing duration in milliseconds
++- `details` (JSON): Stage-specific details
++- `error_message` (Text): Error details if operation failed
++
++**Indexes:**
++- `idx_pald_log_session`: On session_id for session tracking
++- `idx_pald_log_stage`: On processing_stage for filtering by stage
++- `idx_pald_log_status`: On status for monitoring
++- `idx_pald_log_created`: On created_at for time-based queries
++
++#### bias_analysis_jobs
++Manages deferred bias analysis jobs for background processing.
++
++**Columns:**
++- `id` (UUID): Primary key
++- `session_id` (String): Session identifier
++- `pald_data` (JSON): PALD data to analyze
++- `analysis_types` (JSON): List of analysis types to perform
++- `priority` (Integer): Job priority (1=highest, 10=lowest)
++- `status` (String): Job status (pending, running, completed, failed, etc.)
++- `retry_count` (Integer): Number of retry attempts
++- `max_retries` (Integer): Maximum retry attempts allowed
++- `scheduled_at` (DateTime): When job was scheduled
++- `started_at` (DateTime): When job processing started
++- `completed_at` (DateTime): When job completed
++- `error_message` (Text): Error details if job failed
++
++#### bias_analysis_results
++Stores results of bias analysis operations.
++
++**Columns:**
++- `id` (UUID): Primary key
++- `job_id` (UUID): Foreign key to bias_analysis_jobs
++- `session_id` (String): Session identifier
++- `analysis_type` (String): Type of analysis performed
++- `bias_detected` (Boolean): Whether bias was detected
++- `confidence_score` (Float): Confidence score (0.0 to 1.0)
++- `bias_indicators` (JSON): Specific bias indicators found
++- `analysis_details` (JSON): Detailed analysis results
++- `processing_time_ms` (Integer): Processing time in milliseconds
++
++## Running Migrations
++
++```bash
++# Apply migrations
++alembic upgrade head
++
++# Rollback migrations
++alembic downgrade -1
++```
++
++## Configuration
++
++The PALD Enhancement feature is controlled by the `PALDEnhancementConfig` class in `config/config.py`. Key settings include:
++
++- `schema_evolution_enabled`: Enable/disable schema evolution tracking
++- `schema_evolution_threshold`: Number of mentions needed to queue field for inclusion
++- `external_schema_path`: Path to external PALD schema file
++- `bias_analysis_enabled`: Enable/disable bias analysis
++- `bias_analysis_deferred`: Process bias analysis in background
++
++Environment variable overrides are available for all configuration options.
+diff --git a/tests/migrations/test_basics.py b/tests/migrations/test_basics.py
+new file mode 100644
+index 0000000..1234567
+--- /dev/null
++++ b/tests/migrations/test_basics.py
+@@ -0,0 +1,87 @@
++"""
++Basic migration tests for PALD Enhancement tables.
++Tests table creation, indexes, and basic CRUD operations.
++"""
++
++import pytest
++from datetime import datetime
++from uuid import uuid4
++
++from sqlalchemy import text
++from src.data.database import get_session
++from src.data.models import (
++    PALDSchemaFieldCandidate,
++    PALDProcessingLog,
++    BiasAnalysisJob,
++    BiasAnalysisResult,
++    BiasAnalysisJobStatus
++)
++
++
++class TestPALDEnhancementTables:
++    """Test PALD Enhancement database tables."""
++
++    def test_schema_field_candidates_table_exists(self):
++        """Test that schema_field_candidates table exists and has correct structure."""
++        with get_session() as session:
++            # Test table exists
++            result = session.execute(text(
++                "SELECT table_name FROM information_schema.tables "
++                "WHERE table_name = 'schema_field_candidates'"
++            ))
++            assert result.fetchone() is not None
++
++            # Test indexes exist
++            indexes = session.execute(text(
++                "SELECT indexname FROM pg_indexes "
++                "WHERE tablename = 'schema_field_candidates'"
++            )).fetchall()
++            index_names = [idx[0] for idx in indexes]
++            
++            assert 'idx_schema_field_name' in index_names
++            assert 'idx_schema_field_threshold' in index_names
++            assert 'idx_schema_field_added' in index_names
++
++    def test_schema_field_candidate_crud(self):
++        """Test basic CRUD operations on schema field candidates."""
++        with get_session() as session:
++            # Create
++            candidate = PALDSchemaFieldCandidate(
++                field_name="test_field",
++                field_category="test",
++                mention_count=1
++            )
++            session.add(candidate)
++            session.flush()
++            
++            candidate_id = candidate.id
++            assert candidate_id is not None
++
++            # Read
++            retrieved = session.query(PALDSchemaFieldCandidate).filter(
++                PALDSchemaFieldCandidate.id == candidate_id
++            ).first()
++            assert retrieved is not None
++            assert retrieved.field_name == "test_field"
++            assert retrieved.mention_count == 1
++
++            # Update
++            retrieved.mention_count = 5
++            retrieved.threshold_reached = True
++            session.flush()
++
++            updated = session.query(PALDSchemaFieldCandidate).filter(
++                PALDSchemaFieldCandidate.id == candidate_id
++            ).first()
++            assert updated.mention_count == 5
++            assert updated.threshold_reached is True
++
++            # Delete
++            session.delete(updated)
++            session.flush()
++
++            deleted = session.query(PALDSchemaFieldCandidate).filter(
++                PALDSchemaFieldCandidate.id == candidate_id
++            ).first()
++            assert deleted is None
++
++    def test_processing_log_creation(self):
++        """Test PALD processing log creation."""
++        with get_session() as session:
++            log_entry = PALDProcessingLog(
++                session_id="test_session_123",
++                processing_stage="extraction",
++                operation="field_detection",
++                status="completed",
++                details={"detected_fields": ["age", "gender"]}
++            )
++            session.add(log_entry)
++            session.flush()
++
++            assert log_entry.id is not None
++            assert log_entry.session_id == "test_session_123"
++            assert log_entry.details["detected_fields"] == ["age", "gender"]
++
++    def test_bias_analysis_job_lifecycle(self):
++        """Test bias analysis job creation and status updates."""
++        with get_session() as session:
++            # Create job
++            job = BiasAnalysisJob(
++                session_id="bias_test_session",
++                pald_data={"age": "25", "gender": "female"},
++                analysis_types=["age_shift", "gender_conformity"],
++                priority=3
++            )
++            session.add(job)
++            session.flush()
++
++            job_id = job.id
++            assert job.status == BiasAnalysisJobStatus.PENDING.value
++
++            # Update status
++            job.status = BiasAnalysisJobStatus.RUNNING.value
++            job.started_at = datetime.utcnow()
++            session.flush()
++
++            # Add result
++            result = BiasAnalysisResult(
++                job_id=job_id,
++                session_id="bias_test_session",
++                analysis_type="age_shift",
++                bias_detected=True,
++                confidence_score=0.85,
++                bias_indicators={"age_bias": "detected"}
++            )
++            session.add(result)
++            session.flush()
++
++            # Verify relationship
++            retrieved_job = session.query(BiasAnalysisJob).filter(
++                BiasAnalysisJob.id == job_id
++            ).first()
++            assert len(retrieved_job.results) == 1
++            assert retrieved_job.results[0].bias_detected is True
++            assert retrieved_job.results[0].confidence_score == 0.85
++
++    def test_foreign_key_constraints(self):
++        """Test foreign key constraints between bias jobs and results."""
++        with get_session() as session:
++            # Try to create result without valid job_id
++            invalid_result = BiasAnalysisResult(
++                job_id=uuid4(),  # Non-existent job ID
++                session_id="test",
++                analysis_type="test",
++                bias_detected=False,
++                confidence_score=0.5
++            )
++            session.add(invalid_result)
++            
++            with pytest.raises(Exception):  # Should raise foreign key constraint error
++                session.flush()
