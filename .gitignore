@@ -92,3 +92,7 @@ models/
 generated_images/
 exports/
 backups/
+
+patches/
+*.patch
+	ash list

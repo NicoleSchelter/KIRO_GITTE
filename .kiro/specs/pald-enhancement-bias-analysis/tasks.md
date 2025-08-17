@@ -66,4 +66,4 @@
 
 - [ ] 10. Quality Gate, Monitoring & Final Validation (bundles former 9 + 13 + 15)
   - Deliverables: Error hierarchy + recovery manager; performance/processing metrics; privacy checks; extensive unit/integration/perf tests; API + user docs; security review; deployment & rollback docs; final production checks for config flags and external schema path.
-  - _Requirements: cross-cutting (all)_
+ - _Requirements: cross-cutting (all)_
