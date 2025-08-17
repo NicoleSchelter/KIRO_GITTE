@@ -1,0 +1,181 @@
+﻿diff --git a/src/data/models.py b/src/data/models.py
+--- a/src/data/models.py
++++ b/src/data/models.py
+@@ -8,6 +8,7 @@ Defines all SQLAlchemy models for users, consent, PALD, audit logs, and federat
+ 
+ from enum import Enum
+ from uuid import uuid4
++from datetime import datetime
+ 
+ from sqlalchemy import (
+     JSON,
+@@ -18,6 +19,7 @@ from sqlalchemy import (
+     Index,
+     Integer,
+     LargeBinary,
++    Float,
+     String,
+     Text,
+     func,
+@@ -70,6 +72,20 @@ class AuditLogStatus(str, Enum):
+     FINALIZED = "finalized"
+ 
+ 
++class BiasAnalysisJobStatus(str, Enum):
++    """Bias analysis job status enumeration."""
++    
++    PENDING = "pending"
++    RUNNING = "running"
++    COMPLETED = "completed"
++    FAILED = "failed"
++    CANCELLED = "cancelled"
++    RETRY = "retry"
++    DLQ = "dlq"  # Dead Letter Queue
++    TIMEOUT = "timeout"
++    PARTIAL = "partial"
++
++
+ class User(Base):
+     """User model for authentication and role management."""
+ 
+@@ -200,6 +216,134 @@ class PALDAttributeCandidate(Base):
+         return f"<PALDAttributeCandidate(id={self.id}, name={self.attribute_name}, count={self.mention_count})>"
+ 
+ 
++class PALDSchemaFieldCandidate(Base):
++    """PALD schema field candidate model for schema evolution tracking."""
++
++    __tablename__ = "schema_field_candidates"
++
++    id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
++    field_name = Column(String(255), nullable=False, index=True)
++    field_category = Column(String(100), nullable=True)
++    mention_count = Column(Integer, nullable=False, default=1)
++    first_detected = Column(DateTime, nullable=False, default=func.now())
++    last_mentioned = Column(DateTime, nullable=False, default=func.now())
++    threshold_reached = Column(Boolean, nullable=False, default=False)
++    added_to_schema = Column(Boolean, nullable=False, default=False)
++    schema_version_added = Column(String(50), nullable=True)
++    created_at = Column(DateTime, nullable=False, default=func.now())
++    updated_at = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
++
++    # Indexes
++    __table_args__ = (
++        Index("idx_schema_field_name", "field_name"),
++        Index("idx_schema_field_threshold", "threshold_reached"),
++        Index("idx_schema_field_added", "added_to_schema"),
++        Index("idx_schema_field_category", "field_category"),
++    )
++
++    def __repr__(self):
++        return f"<PALDSchemaFieldCandidate(id={self.id}, name={self.field_name}, count={self.mention_count})>"
++
++
++class PALDProcessingLog(Base):
++    """PALD processing log model for tracking processing stages and operations."""
++
++    __tablename__ = "pald_processing_logs"
++
++    id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
++    session_id = Column(String(255), nullable=False, index=True)
++    processing_stage = Column(String(100), nullable=False)  # extraction, validation, bias_analysis, etc.
++    operation = Column(String(100), nullable=False)  # field_detection, schema_validation, etc.
++    status = Column(String(50), nullable=False)  # started, completed, failed
++    start_time = Column(DateTime, nullable=False, default=func.now())
++    end_time = Column(DateTime, nullable=True)
++    duration_ms = Column(Integer, nullable=True)
++    details = Column(JSONColumn, nullable=True)  # Stage-specific details
++    error_message = Column(Text, nullable=True)
++    created_at = Column(DateTime, nullable=False, default=func.now())
++
++    # Indexes
++    __table_args__ = (
++        Index("idx_pald_log_session", "session_id"),
++        Index("idx_pald_log_stage", "processing_stage"),
++        Index("idx_pald_log_status", "status"),
++        Index("idx_pald_log_created", "created_at"),
++    )
++
++    def __repr__(self):
++        return f"<PALDProcessingLog(id={self.id}, session={self.session_id}, stage={self.processing_stage})>"
++
++
++class BiasAnalysisJob(Base):
++    """Bias analysis job model for deferred bias analysis processing."""
++
++    __tablename__ = "bias_analysis_jobs"
++
++    id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
++    session_id = Column(String(255), nullable=False, index=True)
++    pald_data = Column(JSONColumn, nullable=False)  # PALD data to analyze
++    analysis_types = Column(JSONColumn, nullable=False)  # List of analysis types to perform
++    priority = Column(Integer, nullable=False, default=5)  # 1=highest, 10=lowest
++    status = Column(String(50), nullable=False, default=BiasAnalysisJobStatus.PENDING.value)
++    retry_count = Column(Integer, nullable=False, default=0)
++    max_retries = Column(Integer, nullable=False, default=3)
++    scheduled_at = Column(DateTime, nullable=False, default=func.now())
++    started_at = Column(DateTime, nullable=True)
++    completed_at = Column(DateTime, nullable=True)
++    error_message = Column(Text, nullable=True)
++    created_at = Column(DateTime, nullable=False, default=func.now())
++    updated_at = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
++
++    # Relationships
++    results = relationship("BiasAnalysisResult", back_populates="job", cascade="all, delete-orphan")
++
++    # Indexes
++    __table_args__ = (
++        Index("idx_bias_job_session", "session_id"),
++        Index("idx_bias_job_status", "status"),
++        Index("idx_bias_job_scheduled", "scheduled_at"),
++        Index("idx_bias_job_priority", "priority"),
++    )
++
++    @validates("status")
++    def validate_status(self, key, status):
++        """Validate job status."""
++        if status not in [s.value for s in BiasAnalysisJobStatus]:
++            raise ValueError(f"Invalid status: {status}")
++        return status
++
++    def __repr__(self):
++        return f"<BiasAnalysisJob(id={self.id}, session={self.session_id}, status={self.status})>"
++
++
++class BiasAnalysisResult(Base):
++    """Bias analysis result model for storing analysis outcomes."""
++
++    __tablename__ = "bias_analysis_results"
++
++    id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
++    job_id = Column(PostgresUUID(as_uuid=True), ForeignKey("bias_analysis_jobs.id", ondelete="CASCADE"), nullable=False)
++    session_id = Column(String(255), nullable=False, index=True)
++    analysis_type = Column(String(100), nullable=False)  # age_shift, gender_conformity, etc.
++    bias_detected = Column(Boolean, nullable=False)
++    confidence_score = Column(Float, nullable=False)  # 0.0 to 1.0
++    bias_indicators = Column(JSONColumn, nullable=True)  # Specific bias indicators found
++    analysis_details = Column(JSONColumn, nullable=True)  # Detailed analysis results
++    processing_time_ms = Column(Integer, nullable=True)
++    created_at = Column(DateTime, nullable=False, default=func.now())
++
++    # Relationships
++    job = relationship("BiasAnalysisJob", back_populates="results")
++
++    # Indexes
++    __table_args__ = (
++        Index("idx_bias_result_job", "job_id"),
++        Index("idx_bias_result_session", "session_id"),
++        Index("idx_bias_result_type", "analysis_type"),
++        Index("idx_bias_result_detected", "bias_detected"),
++        Index("idx_bias_result_created", "created_at"),
++    )
++
++    def __repr__(self):
++        return f"<BiasAnalysisResult(id={self.id}, type={self.analysis_type}, detected={self.bias_detected})>"
++
++
+ class PALDData(Base):
+     """PALD data model for pedagogical agent level of design information."""
+ 
+
+

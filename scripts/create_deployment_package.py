@@ -188,7 +188,7 @@ class DeploymentPackager:
 
 # Database Configuration
 POSTGRES_PASSWORD=CHANGE_ME_SECURE_PASSWORD
-POSTGRES_DSN=postgresql://gitte:${POSTGRES_PASSWORD}@postgres:5432/data_collector
+POSTGRES_DSN=postgresql://gitte:${POSTGRES_PASSWORD}@postgres:5432/kiro_test
 
 # Security Configuration
 SECRET_KEY=CHANGE_ME_SECURE_SECRET_KEY

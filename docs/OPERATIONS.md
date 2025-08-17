@@ -47,7 +47,7 @@ fi
 
 # 3. Check database connectivity
 echo "3. Checking database connectivity..."
-docker-compose exec -T postgres pg_isready -U gitte -d data_collector
+docker-compose exec -T postgres pg_isready -U gitte -d kiro_test
 if [ $? -eq 0 ]; then
     echo "✅ Database is accessible"
 else
@@ -123,7 +123,7 @@ echo "=== GITTE Daily Metrics - $(date) ==="
 
 # 1. User activity metrics
 echo "1. User Activity Metrics:"
-docker-compose exec -T postgres psql -U gitte -d data_collector -c "
+docker-compose exec -T postgres psql -U gitte -d kiro_test -c "
 SELECT 
     COUNT(DISTINCT user_id) as active_users,
     COUNT(*) as total_interactions,
@@ -134,7 +134,7 @@ WHERE created_at >= CURRENT_DATE;
 
 # 2. System performance metrics
 echo "2. System Performance:"
-docker-compose exec -T postgres psql -U gitte -d data_collector -c "
+docker-compose exec -T postgres psql -U gitte -d kiro_test -c "
 SELECT 
     operation,
     COUNT(*) as count,
@@ -147,7 +147,7 @@ GROUP BY operation;
 
 # 3. Error analysis
 echo "3. Error Analysis:"
-docker-compose exec -T postgres psql -U gitte -d data_collector -c "
+docker-compose exec -T postgres psql -U gitte -d kiro_test -c "
 SELECT 
     status,
     COUNT(*) as count,
@@ -165,8 +165,8 @@ docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\
 echo "5. Storage Usage:"
 echo "Generated Images: $(du -sh generated_images/ | cut -f1)"
 echo "Database Size:"
-docker-compose exec -T postgres psql -U gitte -d data_collector -c "
-SELECT pg_size_pretty(pg_database_size('data_collector')) as database_size;
+docker-compose exec -T postgres psql -U gitte -d kiro_test -c "
+SELECT pg_size_pretty(pg_database_size('kiro_test')) as database_size;
 "
 
 echo "=== Metrics collection completed ==="
@@ -234,7 +234,7 @@ echo "=== Metrics collection completed ==="
 2. **Investigation (5-15 minutes):**
    ```bash
    # Analyze error patterns
-   docker-compose exec postgres psql -U gitte -d data_collector -c "
+   docker-compose exec postgres psql -U gitte -d kiro_test -c "
    SELECT operation, status, COUNT(*) 
    FROM audit_logs 
    WHERE created_at > NOW() - INTERVAL '1 hour' AND status = 'error'
@@ -260,7 +260,7 @@ echo "=== Metrics collection completed ==="
 **Response Procedure:**
 1. **Check database performance:**
    ```bash
-   docker-compose exec postgres psql -U gitte -d data_collector -c "
+   docker-compose exec postgres psql -U gitte -d kiro_test -c "
    SELECT query, mean_time, calls 
    FROM pg_stat_statements 
    ORDER BY mean_time DESC 
@@ -286,7 +286,7 @@ echo "=== Metrics collection completed ==="
    docker-compose restart gitte-app
    
    # Clear database statistics
-   docker-compose exec postgres psql -U gitte -d data_collector -c "
+   docker-compose exec postgres psql -U gitte -d kiro_test -c "
    SELECT pg_stat_statements_reset();
    "
    ```
@@ -347,7 +347,7 @@ mkdir -p $BACKUP_DIR
 
 # 2. Database backup
 echo "Backing up database..."
-docker-compose exec -T postgres pg_dump -U gitte data_collector | gzip > $BACKUP_DIR/database_$DATE.sql.gz
+docker-compose exec -T postgres pg_dump -U gitte kiro_test | gzip > $BACKUP_DIR/database_$DATE.sql.gz
 if [ $? -eq 0 ]; then
     echo "✅ Database backup completed"
 else
@@ -431,16 +431,16 @@ docker-compose stop gitte-app
 
 # 2. Backup current database (if accessible)
 echo "Creating safety backup of current database..."
-docker-compose exec -T postgres pg_dump -U gitte data_collector > current_db_backup_$(date +%Y%m%d_%H%M%S).sql
+docker-compose exec -T postgres pg_dump -U gitte kiro_test > current_db_backup_$(date +%Y%m%d_%H%M%S).sql
 
 # 3. Drop and recreate database
 echo "Recreating database..."
-docker-compose exec -T postgres psql -U gitte -c "DROP DATABASE IF EXISTS data_collector;"
-docker-compose exec -T postgres psql -U gitte -c "CREATE DATABASE data_collector;"
+docker-compose exec -T postgres psql -U gitte -c "DROP DATABASE IF EXISTS kiro_test;"
+docker-compose exec -T postgres psql -U gitte -c "CREATE DATABASE kiro_test;"
 
 # 4. Restore from backup
 echo "Restoring from backup..."
-gunzip -c $BACKUP_FILE | docker-compose exec -T postgres psql -U gitte data_collector
+gunzip -c $BACKUP_FILE | docker-compose exec -T postgres psql -U gitte kiro_test
 if [ $? -eq 0 ]; then
     echo "✅ Database restored successfully"
 else
@@ -506,7 +506,7 @@ sleep 30
 
 # 5. Restore database
 echo "Restoring database..."
-gunzip -c $BACKUP_DIR/database_$BACKUP_DATE.sql.gz | docker-compose exec -T postgres psql -U gitte data_collector
+gunzip -c $BACKUP_DIR/database_$BACKUP_DATE.sql.gz | docker-compose exec -T postgres psql -U gitte kiro_test
 
 # 6. Restore MinIO data
 echo "Restoring MinIO data..."
@@ -756,7 +756,7 @@ echo "Emergency rollback completed"
    docker stats --no-stream > incident-metrics.txt
    
    # Database status
-   docker-compose exec postgres psql -U gitte -d data_collector -c "
+   docker-compose exec postgres psql -U gitte -d kiro_test -c "
    SELECT * FROM pg_stat_activity WHERE state = 'active';
    " > incident-db-status.txt
    ```
@@ -900,8 +900,8 @@ docker-compose stop gitte-app
 
 # 3. Perform database maintenance
 echo "3. Performing database maintenance..."
-docker-compose exec postgres psql -U gitte -d data_collector -c "VACUUM ANALYZE;"
-docker-compose exec postgres psql -U gitte -d data_collector -c "REINDEX DATABASE data_collector;"
+docker-compose exec postgres psql -U gitte -d kiro_test -c "VACUUM ANALYZE;"
+docker-compose exec postgres psql -U gitte -d kiro_test -c "REINDEX DATABASE kiro_test;"
 
 # 4. Update system packages
 echo "4. Updating system packages..."
@@ -993,7 +993,7 @@ echo "Disk: $(df / | awk 'NR==2 {print $5}')"
 
 # 2. Database growth
 echo "2. Database Growth:"
-docker-compose exec -T postgres psql -U gitte -d data_collector -c "
+docker-compose exec -T postgres psql -U gitte -d kiro_test -c "
 SELECT 
     schemaname,
     tablename,
@@ -1005,7 +1005,7 @@ ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
 
 # 3. User growth
 echo "3. User Growth:"
-docker-compose exec -T postgres psql -U gitte -d data_collector -c "
+docker-compose exec -T postgres psql -U gitte -d kiro_test -c "
 SELECT 
     DATE(created_at) as date,
     COUNT(*) as new_users
@@ -1017,7 +1017,7 @@ ORDER BY date;
 
 # 4. Activity trends
 echo "4. Activity Trends:"
-docker-compose exec -T postgres psql -U gitte -d data_collector -c "
+docker-compose exec -T postgres psql -U gitte -d kiro_test -c "
 SELECT 
     DATE(created_at) as date,
     COUNT(*) as interactions,
@@ -1056,7 +1056,7 @@ echo "=== Daily Security Check - $(date) ==="
 
 # 1. Check for failed login attempts
 echo "1. Failed Login Attempts (last 24h):"
-docker-compose exec -T postgres psql -U gitte -d data_collector -c "
+docker-compose exec -T postgres psql -U gitte -d kiro_test -c "
 SELECT COUNT(*) as failed_logins
 FROM audit_logs 
 WHERE operation = 'login' 
@@ -1066,7 +1066,7 @@ AND created_at >= NOW() - INTERVAL '24 hours';
 
 # 2. Check for suspicious activity
 echo "2. Suspicious Activity:"
-docker-compose exec -T postgres psql -U gitte -d data_collector -c "
+docker-compose exec -T postgres psql -U gitte -d kiro_test -c "
 SELECT user_id, COUNT(*) as request_count
 FROM audit_logs 
 WHERE created_at >= NOW() - INTERVAL '1 hour'

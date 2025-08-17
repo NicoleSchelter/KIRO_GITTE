@@ -1,4 +1,4 @@
-diff --git a/pald/schema/evolution.py b/pald/schema/evolution.py
+﻿diff --git a/pald/schema/evolution.py b/pald/schema/evolution.py
 new file mode 100644
 index 0000000..1234567
 --- /dev/null
@@ -295,7 +295,7 @@ index 0000000..1234567
 +    op.drop_table('pald_processing_logs')
 +    op.drop_table('schema_field_candidates')
 diff --git a/src/data/models.py b/src/data/models.py
-index 1111111..2222222 100644
+index 0000000..1234567 100644
 --- a/src/data/models.py
 +++ b/src/data/models.py
 @@ -8,6 +8,7 @@ Defines all SQLAlchemy models for users, consent, PALD, audit logs, and federat
@@ -475,7 +475,7 @@ index 1111111..2222222 100644
      """PALD data model for pedagogical agent level of design information."""
  
 diff --git a/config/config.py b/config/config.py
-index 1111111..2222222 100644
+index 0000000..1234567 100644
 --- a/config/config.py
 +++ b/config/config.py
 @@ -4,6 +4,7 @@ Provides centralized configuration with environment variable overrides and feat

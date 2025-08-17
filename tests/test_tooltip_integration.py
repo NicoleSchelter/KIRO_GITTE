@@ -5,10 +5,9 @@ Tests for Tooltip Integration helpers.
 import unittest
 from unittest.mock import Mock, patch, MagicMock
 
-from src.ui.tooltip_integration import get_tooltip_integration    tooltip_checkbox,
-    consent_checkbox,
-    form_submit_button,
-    prerequisite_button
+from src.ui.tooltip_integration import (
+    get_tooltip_integration,
+    tooltip_checkbox,
 )
 
 

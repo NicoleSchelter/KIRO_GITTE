@@ -137,7 +137,7 @@ GITTE (Great Individual Tutor Embodiment) is a production-grade federated learni
 #### Acceptance Criteria
 
 1. WHEN the system initializes THEN it SHALL connect to PostgreSQL (≥13) with UTF-8 encoding
-2. WHEN the database is configured THEN it SHALL use the default database name "data_collector"
+2. WHEN the database is configured THEN it SHALL use the default database name "kiro_test"
 3. WHEN object storage is enabled THEN it SHALL use MinIO (S3-compatible) for images
 4. WHEN object storage is unavailable THEN it SHALL fallback to local filesystem storage
 5. WHEN images are stored THEN only paths/URIs SHALL be stored in the database, not binary data

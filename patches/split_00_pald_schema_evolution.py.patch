@@ -1,0 +1,181 @@
+﻿diff --git a/pald/schema/evolution.py b/pald/schema/evolution.py
+new file mode 100644
+--- /dev/null
++++ b/pald/schema/evolution.py
+@@ -0,0 +1,156 @@
++"""
++PALD Schema Evolution Manager MVP.
++Detects new fields in PALD data and queues them for schema evolution.
++"""
++
++import logging
++from datetime import datetime
++from typing import Any, Dict, List, Set
++
++from sqlalchemy.orm import Session
++
++from src.data.models import PALDSchemaFieldCandidate, PALDProcessingLog
++from src.data.database import get_session
++from config.config import config
++
++logger = logging.getLogger(__name__)
++
++
++class SchemaEvolutionManager:
++    """Manages PALD schema evolution by detecting and queuing new fields."""
++
++    def __init__(self, threshold: int = None):
++        """Initialize with detection threshold."""
++        self.threshold = threshold or config.pald_enhancement.schema_evolution_threshold
++        self.known_fields: Set[str] = set()
++        self._load_known_fields()
++
++    def _load_known_fields(self) -> None:
++        """Load currently known schema fields."""
++        try:
++            with get_session() as session:
++                candidates = session.query(PALDSchemaFieldCandidate).filter(
++                    PALDSchemaFieldCandidate.added_to_schema == True
++                ).all()
++                self.known_fields = {c.field_name for c in candidates}
++                logger.debug(f"Loaded {len(self.known_fields)} known schema fields")
++        except Exception as e:
++            logger.error(f"Failed to load known fields: {e}")
++            self.known_fields = set()
++
++    def detect_new_fields(self, pald_data: Dict[str, Any], session_id: str) -> List[str]:
++        """
++        Detect new fields in PALD data that aren't in current schema.
++        
++        Args:
++            pald_data: PALD data dictionary to analyze
++            session_id: Session identifier for tracking
++            
++        Returns:
++            List of newly detected field names
++        """
++        if not isinstance(pald_data, dict):
++            return []
++
++        detected_fields = []
++        current_fields = self._extract_field_names(pald_data)
++        
++        for field_name in current_fields:
++            if field_name not in self.known_fields:
++                detected_fields.append(field_name)
++                self._queue_field_candidate(field_name, session_id)
++
++        if detected_fields:
++            logger.info(f"Detected {len(detected_fields)} new fields: {detected_fields}")
++
++        return detected_fields
++
++    def _extract_field_names(self, data: Dict[str, Any], prefix: str = "") -> Set[str]:
++        """Recursively extract field names from nested dictionary."""
++        fields = set()
++        
++        for key, value in data.items():
++            field_name = f"{prefix}.{key}" if prefix else key
++            fields.add(field_name)
++            
++            if isinstance(value, dict):
++                fields.update(self._extract_field_names(value, field_name))
++            elif isinstance(value, list) and value and isinstance(value[0], dict):
++                # Handle arrays of objects
++                fields.update(self._extract_field_names(value[0], f"{field_name}[]"))
++
++        return fields
++
++    def _queue_field_candidate(self, field_name: str, session_id: str) -> None:
++        """Queue a field candidate for potential schema inclusion."""
++        try:
++            with get_session() as session:
++                # Check if candidate already exists
++                existing = session.query(PALDSchemaFieldCandidate).filter(
++                    PALDSchemaFieldCandidate.field_name == field_name
++                ).first()
++
++                if existing:
++                    # Update mention count and timestamp
++                    existing.mention_count += 1
++                    existing.last_mentioned = datetime.utcnow()
++                    
++                    # Check if threshold reached
++                    if existing.mention_count >= self.threshold and not existing.threshold_reached:
++                        existing.threshold_reached = True
++                        logger.info(f"Field '{field_name}' reached threshold ({existing.mention_count})")
++                else:
++                    # Create new candidate
++                    candidate = PALDSchemaFieldCandidate(
++                        field_name=field_name,
++                        field_category=self._categorize_field(field_name),
++                        mention_count=1,
++                        first_detected=datetime.utcnow(),
++                        last_mentioned=datetime.utcnow()
++                    )
++                    session.add(candidate)
++
++                # Log the detection
++                log_entry = PALDProcessingLog(
++                    session_id=session_id,
++                    processing_stage="schema_evolution",
++                    operation="field_detection",
++                    status="completed",
++                    details={"detected_field": field_name}
++                )
++                session.add(log_entry)
++
++        except Exception as e:
++            logger.error(f"Failed to queue field candidate '{field_name}': {e}")
++
++    def _categorize_field(self, field_name: str) -> str:
++        """Categorize field based on name patterns."""
++        field_lower = field_name.lower()
++        
++        if any(term in field_lower for term in ['age', 'birth', 'year']):
++            return 'demographic'
++        elif any(term in field_lower for term in ['gender', 'sex', 'pronoun']):
++            return 'gender'
++        elif any(term in field_lower for term in ['race', 'ethnic', 'nationality']):
++            return 'ethnicity'
++        elif any(term in field_lower for term in ['job', 'occupation', 'profession', 'work']):
++            return 'occupation'
++        elif any(term in field_lower for term in ['appearance', 'look', 'style', 'clothing']):
++            return 'appearance'
++        elif any(term in field_lower for term in ['personality', 'trait', 'behavior']):
++            return 'personality'
++        else:
++            return 'other'
++
++    def get_pending_candidates(self) -> List[PALDSchemaFieldCandidate]:
++        """Get field candidates that have reached threshold but not added to schema."""
++        try:
++            with get_session() as session:
++                return session.query(PALDSchemaFieldCandidate).filter(
++                    PALDSchemaFieldCandidate.threshold_reached == True,
++                    PALDSchemaFieldCandidate.added_to_schema == False
++                ).all()
++        except Exception as e:
++            logger.error(f"Failed to get pending candidates: {e}")
++            return []
++
++    def mark_field_added(self, field_name: str, schema_version: str) -> bool:
++        """Mark a field as added to schema."""
++        try:
++            with get_session() as session:
++                candidate = session.query(PALDSchemaFieldCandidate).filter(
++                    PALDSchemaFieldCandidate.field_name == field_name
++                ).first()
++                
++                if candidate:
++                    candidate.added_to_schema = True
++                    candidate.schema_version_added = schema_version
++                    self.known_fields.add(field_name)
++                    logger.info(f"Marked field '{field_name}' as added to schema v{schema_version}")
++                    return True
++                    
++        except Exception as e:
++            logger.error(f"Failed to mark field '{field_name}' as added: {e}")
++            
++        return False
+

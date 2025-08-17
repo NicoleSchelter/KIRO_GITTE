@@ -99,7 +99,7 @@ class RollbackManager:
     def _backup_database(self, backup_path: Path):
         """Backup PostgreSQL database."""
         try:
-            postgres_dsn = os.getenv("POSTGRES_DSN", "postgresql://gitte:password@localhost:5432/data_collector")
+            postgres_dsn = os.getenv("POSTGRES_DSN", "postgresql://gitte:password@localhost:5432/kiro_test")
             
             # Extract connection parameters
             import urllib.parse
@@ -113,7 +113,7 @@ class RollbackManager:
                 "-h", parsed.hostname or "localhost",
                 "-p", str(parsed.port or 5432),
                 "-U", parsed.username or "gitte",
-                "-d", parsed.path.lstrip('/') or "data_collector",
+                "-d", parsed.path.lstrip('/') or "kiro_test",
                 "-f", str(db_backup_file),
                 "--verbose"
             ]
@@ -278,7 +278,7 @@ class RollbackManager:
     def rollback_database_schema(self) -> bool:
         """Rollback database schema changes."""
         try:
-            postgres_dsn = os.getenv("POSTGRES_DSN", "postgresql://gitte:password@localhost:5432/data_collector")
+            postgres_dsn = os.getenv("POSTGRES_DSN", "postgresql://gitte:password@localhost:5432/kiro_test")
             
             # Connect to database
             conn = psycopg2.connect(postgres_dsn)
@@ -339,7 +339,7 @@ class RollbackManager:
     def cleanup_ux_data(self) -> bool:
         """Clean up UX enhancement data from database."""
         try:
-            postgres_dsn = os.getenv("POSTGRES_DSN", "postgresql://gitte:password@localhost:5432/data_collector")
+            postgres_dsn = os.getenv("POSTGRES_DSN", "postgresql://gitte:password@localhost:5432/kiro_test")
             
             conn = psycopg2.connect(postgres_dsn)
             cursor = conn.cursor()

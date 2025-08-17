@@ -230,7 +230,7 @@ curl -f https://yourdomain.com/health
 curl -f https://yourdomain.com/_stcore/health
 
 # Test database connection
-docker-compose -f docker-compose.prod.yml exec postgres pg_isready -U gitte -d data_collector
+docker-compose -f docker-compose.prod.yml exec postgres pg_isready -U gitte -d kiro_test
 ```
 
 ## 🔧 Configuration Management
@@ -322,13 +322,13 @@ http://localhost:9090
 
 ```bash
 # Create backup
-docker-compose -f docker-compose.prod.yml exec postgres pg_dump -U gitte data_collector > backup_$(date +%Y%m%d_%H%M%S).sql
+docker-compose -f docker-compose.prod.yml exec postgres pg_dump -U gitte kiro_test > backup_$(date +%Y%m%d_%H%M%S).sql
 
 # Automated backup script
 #!/bin/bash
 BACKUP_DIR="/backups"
 DATE=$(date +%Y%m%d_%H%M%S)
-docker-compose -f docker-compose.prod.yml exec postgres pg_dump -U gitte data_collector > $BACKUP_DIR/gitte_backup_$DATE.sql
+docker-compose -f docker-compose.prod.yml exec postgres pg_dump -U gitte kiro_test > $BACKUP_DIR/gitte_backup_$DATE.sql
 find $BACKUP_DIR -name "gitte_backup_*.sql" -mtime +7 -delete
 ```
 
@@ -394,7 +394,7 @@ docker-compose -f docker-compose.prod.yml logs gitte-app
 docker-compose -f docker-compose.prod.yml ps postgres
 
 # Test connection
-docker-compose -f docker-compose.prod.yml exec postgres psql -U gitte -d data_collector -c "SELECT 1;"
+docker-compose -f docker-compose.prod.yml exec postgres psql -U gitte -d kiro_test -c "SELECT 1;"
 
 # Check network connectivity
 docker-compose -f docker-compose.prod.yml exec gitte-app ping postgres
@@ -432,7 +432,7 @@ docker stats
 curl https://yourdomain.com/admin/metrics
 
 # Monitor database performance
-docker-compose -f docker-compose.prod.yml exec postgres psql -U gitte -d data_collector -c "SELECT * FROM pg_stat_activity;"
+docker-compose -f docker-compose.prod.yml exec postgres psql -U gitte -d kiro_test -c "SELECT * FROM pg_stat_activity;"
 
 # Check Ollama model loading
 curl http://localhost:11434/api/tags
