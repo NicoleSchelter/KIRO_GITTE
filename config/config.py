@@ -13,7 +13,7 @@ from typing import Any
 class DatabaseConfig:
     """Database configuration settings."""
 
-    dsn: str = "postgresql://gitte:password@localhost:5432/kiro_test"
+    dsn: str = "postgresql://gitte:sicheres_passwort@localhost:5432/kiro_test"
     pool_size: int = 10
     max_overflow: int = 20
     echo: bool = False
