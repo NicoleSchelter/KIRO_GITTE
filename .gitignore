@@ -92,6 +92,7 @@ models/
 generated_images/
 exports/
 backups/
+ExecDoku/
 
 patches/
 *.patch
