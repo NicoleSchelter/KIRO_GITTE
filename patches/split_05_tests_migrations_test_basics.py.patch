@@ -1,0 +1,166 @@
+﻿diff --git a/tests/migrations/test_basics.py b/tests/migrations/test_basics.py
+new file mode 100644
+--- /dev/null
++++ b/tests/migrations/test_basics.py
+@@ -0,0 +1,87 @@
++"""
++Basic migration tests for PALD Enhancement tables.
++Tests table creation, indexes, and basic CRUD operations.
++"""
++
++import pytest
++from datetime import datetime
++from uuid import uuid4
++
++from sqlalchemy import text
++from src.data.database import get_session
++from src.data.models import (
++    PALDSchemaFieldCandidate,
++    PALDProcessingLog,
++    BiasAnalysisJob,
++    BiasAnalysisResult,
++    BiasAnalysisJobStatus
++)
++
++
++class TestPALDEnhancementTables:
++    """Test PALD Enhancement database tables."""
++
++    def test_schema_field_candidates_table_exists(self):
++        """Test that schema_field_candidates table exists and has correct structure."""
++        with get_session() as session:
++            # Test table exists
++            result = session.execute(text(
++                "SELECT table_name FROM information_schema.tables "
++                "WHERE table_name = 'schema_field_candidates'"
++            ))
++            assert result.fetchone() is not None
++
++            # Test indexes exist
++            indexes = session.execute(text(
++                "SELECT indexname FROM pg_indexes "
++                "WHERE tablename = 'schema_field_candidates'"
++            )).fetchall()
++            index_names = [idx[0] for idx in indexes]
++            
++            assert 'idx_schema_field_name' in index_names
++            assert 'idx_schema_field_threshold' in index_names
++            assert 'idx_schema_field_added' in index_names
++
++    def test_schema_field_candidate_crud(self):
++        """Test basic CRUD operations on schema field candidates."""
++        with get_session() as session:
++            # Create
++            candidate = PALDSchemaFieldCandidate(
++                field_name="test_field",
++                field_category="test",
++                mention_count=1
++            )
++            session.add(candidate)
++            session.flush()
++            
++            candidate_id = candidate.id
++            assert candidate_id is not None
++
++            # Read
++            retrieved = session.query(PALDSchemaFieldCandidate).filter(
++                PALDSchemaFieldCandidate.id == candidate_id
++            ).first()
++            assert retrieved is not None
++            assert retrieved.field_name == "test_field"
++            assert retrieved.mention_count == 1
++
++            # Update
++            retrieved.mention_count = 5
++            retrieved.threshold_reached = True
++            session.flush()
++
++            updated = session.query(PALDSchemaFieldCandidate).filter(
++                PALDSchemaFieldCandidate.id == candidate_id
++            ).first()
++            assert updated.mention_count == 5
++            assert updated.threshold_reached is True
++
++            # Delete
++            session.delete(updated)
++            session.flush()
++
++            deleted = session.query(PALDSchemaFieldCandidate).filter(
++                PALDSchemaFieldCandidate.id == candidate_id
++            ).first()
++            assert deleted is None
++
++    def test_processing_log_creation(self):
++        """Test PALD processing log creation."""
++        with get_session() as session:
++            log_entry = PALDProcessingLog(
++                session_id="test_session_123",
++                processing_stage="extraction",
++                operation="field_detection",
++                status="completed",
++                details={"detected_fields": ["age", "gender"]}
++            )
++            session.add(log_entry)
++            session.flush()
++
++            assert log_entry.id is not None
++            assert log_entry.session_id == "test_session_123"
++            assert log_entry.details["detected_fields"] == ["age", "gender"]
++
++    def test_bias_analysis_job_lifecycle(self):
++        """Test bias analysis job creation and status updates."""
++        with get_session() as session:
++            # Create job
++            job = BiasAnalysisJob(
++                session_id="bias_test_session",
++                pald_data={"age": "25", "gender": "female"},
++                analysis_types=["age_shift", "gender_conformity"],
++                priority=3
++            )
++            session.add(job)
++            session.flush()
++
++            job_id = job.id
++            assert job.status == BiasAnalysisJobStatus.PENDING.value
++
++            # Update status
++            job.status = BiasAnalysisJobStatus.RUNNING.value
++            job.started_at = datetime.utcnow()
++            session.flush()
++
++            # Add result
++            result = BiasAnalysisResult(
++                job_id=job_id,
++                session_id="bias_test_session",
++                analysis_type="age_shift",
++                bias_detected=True,
++                confidence_score=0.85,
++                bias_indicators={"age_bias": "detected"}
++            )
++            session.add(result)
++            session.flush()
++
++            # Verify relationship
++            retrieved_job = session.query(BiasAnalysisJob).filter(
++                BiasAnalysisJob.id == job_id
++            ).first()
++            assert len(retrieved_job.results) == 1
++            assert retrieved_job.results[0].bias_detected is True
++            assert retrieved_job.results[0].confidence_score == 0.85
++
++    def test_foreign_key_constraints(self):
++        """Test foreign key constraints between bias jobs and results."""
++        with get_session() as session:
++            # Try to create result without valid job_id
++            invalid_result = BiasAnalysisResult(
++                job_id=uuid4(),  # Non-existent job ID
++                session_id="test",
++                analysis_type="test",
++                bias_detected=False,
++                confidence_score=0.5
++            )
++            session.add(invalid_result)
++            
++            with pytest.raises(Exception):  # Should raise foreign key constraint error
++                session.flush()
+

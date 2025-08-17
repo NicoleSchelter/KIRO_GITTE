@@ -685,7 +685,7 @@ This guide provides solutions to common issues you may encounter with the GITTE 
    curl http://localhost:11434/api/health
    
    # Test PostgreSQL
-   psql -h localhost -U gitte -d data_collector -c "SELECT 1;"
+   psql -h localhost -U gitte -d kiro_test -c "SELECT 1;"
    
    # Test Redis
    redis-cli ping

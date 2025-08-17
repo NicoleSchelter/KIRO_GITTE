@@ -341,3 +341,58 @@ class PALDSchemaManager:
         logger.info(f"Activated PALD schema version {version}")
 
         return PALDSchemaVersionResponse.model_validate(target_schema)
+
+# ---------------------------------------------------------------------------
+# Lightweight facade expected by tests: PALDLogic
+# ---------------------------------------------------------------------------
+from sqlalchemy.orm import Session as _Session  # alias, um Namenskollisionen zu vermeiden
+from typing import Any as _Any
+
+class PALDLogic:
+    """
+    Minimaler, testfreundlicher Stub für PALD-Analysen.
+
+    Warum so?
+    - Die Tests importieren `PALDLogic` aus `src.logic.pald`.
+    - Wir halten die API schlank (kein Zwang zu laufender DB beim Import).
+    - Spätere, echte Logik kann über PALDManager angebunden werden.
+    """
+
+    def __init__(self, db_session: _Session | None = None) -> None:
+        self.db_session = db_session
+        # PALDManager nur initialisieren, wenn eine Session übergeben wurde
+        self._manager = PALDManager(db_session) if db_session is not None else None
+
+    def analyze(self, pald_record: _Any) -> dict[str, _Any]:
+        """
+        Einfache Heuristik: Setzt `bias_detected`, wenn bestimmte Trigger
+        in textuellen Feldern auftauchen. Gibt ein Dict mit den in Task 7
+        eingeführten Feldern zurück: bias_detected, analysis_type, issues.
+        """
+        # Textquellen robust einsammeln (dict oder objektartige Records)
+        parts: list[str] = []
+        if isinstance(pald_record, dict):
+            for key in ("detail", "description", "notes", "text", "content"):
+                v = pald_record.get(key)
+                if isinstance(v, str):
+                    parts.append(v)
+        else:
+            for attr in ("detail", "description", "notes", "text", "content"):
+                v = getattr(pald_record, attr, None)
+                if isinstance(v, str):
+                    parts.append(v)
+
+        text = " ".join(parts).lower()
+
+        # simple Triggerliste (Platzhalter bis zur echten Analyse)
+        triggers = ("gender", "age", "ethnicity", "sensitive", "bias", "toxicity", "stereotype")
+        issues: list[str] = [f"{t}_signal" for t in triggers if t in text]
+
+        return {
+            "bias_detected": bool(issues),
+            "analysis_type": "heuristic_v1",
+            "issues": issues,
+        }
+
+# Exportliste ergänzen/setzen
+__all__ = ["PALDLogic", "PALDManager", "PALDSchemaManager"]

@@ -7,7 +7,7 @@ services:
       - "8501:8501"
     environment:
       - ENVIRONMENT=development
-      - POSTGRES_DSN=postgresql://gitte:password@postgres:5432/data_collector
+      - POSTGRES_DSN=postgresql://gitte:password@postgres:5432/kiro_test
       - OLLAMA_URL=http://ollama:11434
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
@@ -53,7 +53,7 @@ services:
   postgres:
     image: postgres:15
     environment:
-      - POSTGRES_DB=data_collector
+      - POSTGRES_DB=kiro_test
       - POSTGRES_USER=gitte
       - POSTGRES_PASSWORD=password
     ports:

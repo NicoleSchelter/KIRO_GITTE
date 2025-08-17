@@ -80,11 +80,11 @@ docker compose down
 2. **Postgres bereitstellen**
    - Schnell per Docker:
      ```bash
-     docker run --name gitte-pg -e POSTGRES_PASSWORD=password -e POSTGRES_USER=gitte -e POSTGRES_DB=data_collector -p 5432:5432 -d postgres:15
+     docker run --name gitte-pg -e POSTGRES_PASSWORD=password -e POSTGRES_USER=gitte -e POSTGRES_DB=kiro_test -p 5432:5432 -d postgres:15
      ```
    - Prüfe, ob die `.env` den DSN nutzt:
      ```env
-     POSTGRES_DSN=postgresql://gitte:password@localhost:5432/data_collector
+     POSTGRES_DSN=postgresql://gitte:password@localhost:5432/kiro_test
      ```
 
 3. **.env anlegen**

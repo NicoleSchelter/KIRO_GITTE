@@ -14,7 +14,7 @@ docker-compose ps
 curl -f http://localhost:8501/_stcore/health
 
 # Check database connectivity
-docker-compose exec postgres pg_isready -U gitte -d data_collector
+docker-compose exec postgres pg_isready -U gitte -d kiro_test
 
 # Check Ollama service
 curl -f http://localhost:11434/api/tags
@@ -74,7 +74,7 @@ docker-compose exec gitte-app env | grep -E "(POSTGRES|OLLAMA|MINIO)"
 docker-compose ps postgres
 
 # Test database connection
-docker-compose exec postgres psql -U gitte -d data_collector -c "SELECT 1;"
+docker-compose exec postgres psql -U gitte -d kiro_test -c "SELECT 1;"
 
 # Check database logs
 docker-compose logs postgres
@@ -169,7 +169,7 @@ docker-compose exec gitte-app python -m alembic current
 docker-compose exec gitte-app python -m alembic history
 
 # Check database schema
-docker-compose exec postgres psql -U gitte -d data_collector -c "\dt"
+docker-compose exec postgres psql -U gitte -d kiro_test -c "\dt"
 ```
 
 **Solutions:**
@@ -198,22 +198,22 @@ docker-compose exec gitte-app python -m alembic revision --autogenerate -m "desc
 **Diagnosis:**
 ```bash
 # Check active connections
-docker-compose exec postgres psql -U gitte -d data_collector -c "SELECT * FROM pg_stat_activity;"
+docker-compose exec postgres psql -U gitte -d kiro_test -c "SELECT * FROM pg_stat_activity;"
 
 # Check slow queries
-docker-compose exec postgres psql -U gitte -d data_collector -c "SELECT query, mean_time, calls FROM pg_stat_statements ORDER BY mean_time DESC LIMIT 10;"
+docker-compose exec postgres psql -U gitte -d kiro_test -c "SELECT query, mean_time, calls FROM pg_stat_statements ORDER BY mean_time DESC LIMIT 10;"
 
 # Check database size
-docker-compose exec postgres psql -U gitte -d data_collector -c "SELECT pg_size_pretty(pg_database_size('data_collector'));"
+docker-compose exec postgres psql -U gitte -d kiro_test -c "SELECT pg_size_pretty(pg_database_size('kiro_test'));"
 ```
 
 **Solutions:**
 ```bash
 # Analyze and optimize queries
-docker-compose exec postgres psql -U gitte -d data_collector -c "ANALYZE;"
+docker-compose exec postgres psql -U gitte -d kiro_test -c "ANALYZE;"
 
 # Create indexes for slow queries
-docker-compose exec postgres psql -U gitte -d data_collector -c "CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at);"
+docker-compose exec postgres psql -U gitte -d kiro_test -c "CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at);"
 
 # Increase shared_buffers in docker-compose.yml
 # Add to postgres command: -c shared_buffers=256MB
@@ -417,7 +417,7 @@ docker-compose exec minio mc admin info local
 **Diagnosis:**
 ```bash
 # Check user table
-docker-compose exec postgres psql -U gitte -d data_collector -c "SELECT username, role, created_at FROM users;"
+docker-compose exec postgres psql -U gitte -d kiro_test -c "SELECT username, role, created_at FROM users;"
 
 # Check session management
 docker-compose logs gitte-app | grep -i session
@@ -432,12 +432,12 @@ print('Auth system loaded successfully')
 **Solutions:**
 ```bash
 # Reset user password
-docker-compose exec postgres psql -U gitte -d data_collector -c "
+docker-compose exec postgres psql -U gitte -d kiro_test -c "
 UPDATE users SET password_hash = '\$2b\$12\$...' WHERE username = 'testuser';
 "
 
 # Clear sessions
-docker-compose exec postgres psql -U gitte -d data_collector -c "DELETE FROM user_sessions;"
+docker-compose exec postgres psql -U gitte -d kiro_test -c "DELETE FROM user_sessions;"
 
 # Check session configuration
 grep -i session config/config.py
@@ -453,7 +453,7 @@ grep -i session config/config.py
 **Diagnosis:**
 ```bash
 # Check user roles
-docker-compose exec postgres psql -U gitte -d data_collector -c "SELECT username, role FROM users;"
+docker-compose exec postgres psql -U gitte -d kiro_test -c "SELECT username, role FROM users;"
 
 # Check role-based access
 docker-compose logs gitte-app | grep -i "permission\|role\|access"
@@ -462,7 +462,7 @@ docker-compose logs gitte-app | grep -i "permission\|role\|access"
 **Solutions:**
 ```bash
 # Update user role
-docker-compose exec postgres psql -U gitte -d data_collector -c "
+docker-compose exec postgres psql -U gitte -d kiro_test -c "
 UPDATE users SET role = 'ADMIN' WHERE username = 'admin_user';
 "
 
@@ -490,7 +490,7 @@ iostat -x 1
 docker stats
 
 # Check database performance
-docker-compose exec postgres psql -U gitte -d data_collector -c "
+docker-compose exec postgres psql -U gitte -d kiro_test -c "
 SELECT query, mean_time, calls FROM pg_stat_statements 
 ORDER BY mean_time DESC LIMIT 10;
 "
@@ -503,7 +503,7 @@ docker-compose logs gitte-app | grep -i "latency\|time\|slow"
 ```bash
 # Optimize database queries
 # Add indexes for frequently queried columns
-docker-compose exec postgres psql -U gitte -d data_collector -c "
+docker-compose exec postgres psql -U gitte -d kiro_test -c "
 CREATE INDEX idx_audit_logs_user_id ON audit_logs(user_id);
 CREATE INDEX idx_pald_data_user_id ON pald_data(user_id);
 "
@@ -622,7 +622,7 @@ docker-compose down
 docker volume rm gitte-federated-learning-system_postgres_data
 docker-compose up -d postgres
 sleep 30
-docker-compose exec postgres psql -U gitte -d data_collector < backup.sql
+docker-compose exec postgres psql -U gitte -d kiro_test < backup.sql
 
 # Application rollback
 git checkout previous-stable-tag
@@ -633,10 +633,10 @@ docker-compose up -d
 #### Data Recovery
 ```bash
 # Restore from backup
-docker-compose exec postgres psql -U gitte -d data_collector < backup_YYYYMMDD.sql
+docker-compose exec postgres psql -U gitte -d kiro_test < backup_YYYYMMDD.sql
 
 # Recover deleted user data (if within retention period)
-docker-compose exec postgres psql -U gitte -d data_collector -c "
+docker-compose exec postgres psql -U gitte -d kiro_test -c "
 SELECT * FROM deleted_users WHERE deleted_at > NOW() - INTERVAL '72 hours';
 "
 

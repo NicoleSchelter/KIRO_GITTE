@@ -94,7 +94,7 @@ class DeploymentValidator:
     async def validate_database_connectivity(self) -> bool:
         """Validate database connectivity."""
         try:
-            postgres_dsn = os.getenv("POSTGRES_DSN", "postgresql://gitte:password@localhost:5432/data_collector")
+            postgres_dsn = os.getenv("POSTGRES_DSN", "postgresql://gitte:password@localhost:5432/kiro_test")
             
             conn = psycopg2.connect(postgres_dsn)
             cursor = conn.cursor()

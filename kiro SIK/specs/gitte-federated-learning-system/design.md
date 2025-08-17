@@ -505,7 +505,7 @@ services:
       - "8501:8501"
     environment:
       - ENVIRONMENT=development
-      - POSTGRES_DSN=postgresql://gitte:password@postgres:5432/data_collector
+      - POSTGRES_DSN=postgresql://gitte:password@postgres:5432/kiro_test
       - OLLAMA_URL=http://ollama:11434
     volumes:
       - ./config:/app/config
@@ -518,7 +518,7 @@ services:
   postgres:
     image: postgres:15
     environment:
-      - POSTGRES_DB=data_collector
+      - POSTGRES_DB=kiro_test
       - POSTGRES_USER=gitte
       - POSTGRES_PASSWORD=password
     volumes:
@@ -581,7 +581,7 @@ class Config:
     feature_flags: Dict[str, bool] = None
     
     # Database
-    postgres_dsn: str = os.getenv("POSTGRES_DSN", "postgresql://localhost/data_collector")
+    postgres_dsn: str = os.getenv("POSTGRES_DSN", "postgresql://localhost/kiro_test")
     
     # LLM Configuration
     ollama_url: str = os.getenv("OLLAMA_URL", "http://localhost:11434")

@@ -9,7 +9,7 @@ services:
       - "8501:8501"
     environment:
       - ENVIRONMENT=production
-      - POSTGRES_DSN=postgresql://gitte:${POSTGRES_PASSWORD}@postgres:5432/data_collector
+      - POSTGRES_DSN=postgresql://gitte:${POSTGRES_PASSWORD}@postgres:5432/kiro_test
       - OLLAMA_URL=http://ollama:11434
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
@@ -68,7 +68,7 @@ services:
   postgres:
     image: postgres:15-alpine
     environment:
-      - POSTGRES_DB=data_collector
+      - POSTGRES_DB=kiro_test
       - POSTGRES_USER=gitte
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
@@ -80,7 +80,7 @@ services:
       - gitte-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gitte -d data_collector"]
+      test: ["CMD-SHELL", "pg_isready -U gitte -d kiro_test"]
       interval: 30s
       timeout: 10s
       retries: 3

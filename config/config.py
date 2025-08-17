@@ -4,6 +4,7 @@ Provides centralized configuration with environment variable overrides and featu
 """
 
 import os
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -12,7 +13,7 @@ from typing import Any
 class DatabaseConfig:
     """Database configuration settings."""
 
-    dsn: str = "postgresql://gitte:password@localhost:5432/data_collector"
+    dsn: str = "postgresql://gitte:sicheres_passwort@localhost:5432/kiro_test"
     pool_size: int = 10
     max_overflow: int = 20
     echo: bool = False
@@ -207,6 +208,58 @@ class UXAuditConfig:
 
 
 @dataclass
+class PALDEnhancementConfig:
+    """PALD Enhancement and Bias Analysis configuration."""
+
+    # Schema Evolution
+    schema_evolution_enabled: bool = True
+    schema_evolution_threshold: int = 5  # Mentions needed to queue field for schema inclusion
+    external_schema_path: str = "./config/pald_schema.json"
+    schema_validation_strict: bool = True
+    schema_auto_reload: bool = True
+    schema_reload_interval_seconds: int = 300  # 5 minutes
+
+    # PALD Light Extraction
+    pald_light_enabled: bool = True
+    pald_light_mandatory: bool = True  # Always extract PALD Light
+    pald_extraction_timeout_seconds: int = 30
+    pald_validation_enabled: bool = True
+    prompt_compression_enabled: bool = True
+    prompt_compression_max_length: int = 200
+
+    # Bias Analysis
+    bias_analysis_enabled: bool = True
+    bias_analysis_deferred: bool = True  # Process in background
+    bias_analysis_types: list = field(default_factory=lambda: [
+        "age_shift", "gender_conformity", "ethnicity",
+        "occupational_stereotypes", "ambivalent_stereotypes", "multiple_stereotyping"
+    ])
+    bias_job_priority_default: int = 5
+    bias_job_max_retries: int = 3
+    bias_job_timeout_seconds: int = 120
+    bias_confidence_threshold: float = 0.7
+
+    # Processing & Storage
+    pald_diff_enabled: bool = True
+    pald_store_append_only: bool = True
+    pald_pseudonymization_enabled: bool = True
+    processing_log_enabled: bool = True
+    processing_log_retention_days: int = 30
+
+    def __post_init__(self):
+        """Override with environment variables."""
+        if env_enabled := os.getenv("PALD_ENHANCEMENT_ENABLED"):
+            self.pald_light_enabled = env_enabled.lower() == "true"
+        if env_schema_path := os.getenv("PALD_SCHEMA_PATH"):
+            self.external_schema_path = env_schema_path
+        if env_threshold := os.getenv("PALD_SCHEMA_THRESHOLD"):
+            self.schema_evolution_threshold = int(env_threshold)
+        if env_bias_enabled := os.getenv("PALD_BIAS_ANALYSIS_ENABLED"):
+            self.bias_analysis_enabled = env_bias_enabled.lower() == "true"
+        if env_timeout := os.getenv("PALD_EXTRACTION_TIMEOUT"):
+            self.pald_extraction_timeout_seconds = int(env_timeout)
+
+@dataclass
 class FeatureFlags:
     """Feature flags for controlling system behavior."""
 
@@ -225,6 +278,7 @@ class FeatureFlags:
     enable_tooltip_system: bool = True
     enable_prerequisite_checks: bool = True
     enable_ux_audit_logging: bool = True
+    enable_pald_enhancement: bool = True
 
     def __post_init__(self):
         """Override feature flags from environment variables."""
@@ -251,6 +305,7 @@ class Config:
     tooltip: TooltipConfig = field(default_factory=TooltipConfig)
     prerequisite: PrerequisiteConfig = field(default_factory=PrerequisiteConfig)
     ux_audit: UXAuditConfig = field(default_factory=UXAuditConfig)
+    pald_enhancement: PALDEnhancementConfig = field(default_factory=PALDEnhancementConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     federated_learning: FederatedLearningConfig = field(default_factory=FederatedLearningConfig)
@@ -291,6 +346,15 @@ class Config:
                 raise ValueError("SECRET_KEY must be set in production")
             if self.security.encryption_key == "dev-encryption-key-change-in-production":
                 raise ValueError("ENCRYPTION_KEY must be set in production")
+
+        # Validate PALD Enhancement configuration
+        if self.pald_enhancement.pald_light_enabled:
+            schema_path = Path(self.pald_enhancement.external_schema_path)
+            if not schema_path.exists():
+                if self.pald_enhancement.schema_validation_strict:
+                    raise ValueError(f"PALD schema file not found: {schema_path}")
+                else:
+                    print(f"Warning: PALD schema file not found: {schema_path}")
 
 
 # Initialize configuration with environment-specific overrides
