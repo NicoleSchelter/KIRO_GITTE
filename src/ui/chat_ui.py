@@ -642,3 +642,98 @@ def render_embodiment_design_chat(user_id: UUID) -> dict[str, Any] | None:
 def render_chat_history(user_id: UUID) -> None:
     """Render chat history."""
     chat_ui.render_chat_history(user_id)
+
+# === Task 9: PALD Response Helpers (append-only) =============================
+# Pure helpers for banners/notices/summary lines + thin Streamlit wrapper.
+# NOTE: We keep imports inside the functions where possible to avoid hard deps.
+
+from typing import Optional, List
+
+try:
+    # Import UI contracts for typing and helper logic.
+    from src.ui.contracts import PALDProcessingResponse, UiJobStatus
+except Exception:  # pragma: no cover - typing fallback if contracts are missing at import time
+    PALDProcessingResponse = object  # type: ignore
+    class UiJobStatus:  # type: ignore
+        PENDING = "pending"
+        RUNNING = "running"
+        COMPLETED = "completed"
+        FAILED = "failed"
+
+def banner_text(status: "UiJobStatus") -> str:
+    """Return a human-readable banner text for a given job status."""
+    mapping = {
+        getattr(UiJobStatus, "PENDING", "pending"): "⏳ Processing request…",
+        getattr(UiJobStatus, "RUNNING", "running"): "🔧 Analysis in progress…",
+        getattr(UiJobStatus, "COMPLETED", "completed"): "✅ Processing completed successfully",
+        getattr(UiJobStatus, "FAILED", "failed"): "❌ Processing failed",
+    }
+    # Support Enum-like .value or plain strings
+    key = getattr(status, "value", status)
+    return mapping.get(key, f"Status: {key}")
+
+def defer_text(response: "PALDProcessingResponse") -> Optional[str]:
+    """Return a defer notice if heavy bias scan was deferred."""
+    notice = getattr(response, "defer_notice", None)
+    if not notice:
+        return None
+    if isinstance(notice, str):
+        return notice
+    return "⚠️ Heavy bias scan deferred. Results will be available later."
+
+def error_text(response: "PALDProcessingResponse") -> Optional[str]:
+    """Return user-facing error text (if present)."""
+    msg = getattr(response, "error_message", None)
+    return str(msg) if msg else None
+
+def pald_summary_lines(response: "PALDProcessingResponse", max_items: int = 20) -> List[str]:
+    """
+    Build a concise summary list:
+    1) The pald_diff_summary (truncated to max_items, with ellipsis)
+    2) A few populated pald_light keys for quick glance
+    """
+    lines: List[str] = []
+
+    # 1) diff
+    diff = list(getattr(response, "pald_diff_summary", []) or [])
+    if diff:
+        if len(diff) > max_items:
+            lines.extend(diff[:max_items])
+            lines.append("…")
+        else:
+            lines.extend(diff)
+
+    # 2) sample of pald_light
+    pald = dict(getattr(response, "pald_light", {}) or {})
+    shown = 0
+    for k, v in pald.items():
+        if shown >= 5:
+            lines.append("…")
+            break
+        lines.append(f"pald:{k} -> {v}")
+        shown += 1
+
+    return lines
+
+def render_pald_response(resp: "PALDProcessingResponse") -> None:
+    """
+    Thin Streamlit wrapper that uses the pure helpers above.
+    Guarded import ensures tests can import helpers without Streamlit installed.
+    """
+    try:
+        import streamlit as st  # guarded import
+    except Exception:
+        return
+
+    st.info(banner_text(resp.status))
+    dt = defer_text(resp)
+    if dt:
+        st.warning(dt)
+
+    for line in pald_summary_lines(resp):
+        st.write(f"- {line}")
+
+    et = error_text(resp)
+    if et:
+        st.error(et)
+# === End Task 9 append-only ===================================================

@@ -776,3 +776,86 @@ def _apply_enhanced_accessibility_features():
 
 if __name__ == "__main__":
     main()
+
+# === Task 9: PALD wiring (append-only) =======================================
+from typing import Any, Dict
+
+_PALD_SCHEMA_CACHE: Dict[str, Any] | None = None
+
+def _get_pald_schema_cached() -> dict:
+    """
+    Load PALD schema once and cache it.
+    Reads default path resolution from the service loader (env/config-aware).
+    """
+    global _PALD_SCHEMA_CACHE
+    if _PALD_SCHEMA_CACHE is None:
+        try:
+            from src.services.pald_schema import load_pald_schema
+            from src.utils.logging import get_logger
+            logger = get_logger(__name__)
+            _PALD_SCHEMA_CACHE = load_pald_schema()
+            logger.info("pald_schema_loaded ok=1")
+        except Exception as e:  # pragma: no cover
+            try:
+                from src.utils.logging import get_logger
+                get_logger(__name__).error("pald_schema_load_failed error=%s", e)
+            except Exception:
+                pass
+            _PALD_SCHEMA_CACHE = {}
+    return _PALD_SCHEMA_CACHE or {}
+
+def validate_and_render_pald(response: "object") -> None:
+    """
+    Validate response.pald_light against schema and render banners/summary/errors.
+    This function expects a PALDProcessingResponse (UI contract).
+    """
+    try:
+        from src.services.pald_schema import validate_pald_light
+        from src.ui.chat_ui import render_pald_response
+        from src.utils.logging import get_logger
+
+        logger = get_logger(__name__)
+        schema = _get_pald_schema_cached()
+
+        pald = dict(getattr(response, "pald_light", {}) or {})
+        before = len(pald)
+
+        validated = validate_pald_light(pald, schema)
+        after = len(validated)
+        stripped = before - after
+        if stripped > 0:
+            logger.info("pald_validation_stripped keys=%d", stripped)
+
+        # Mutate the response object to the validated shape so the UI shows only allowed keys.
+        try:
+            response.pald_light = validated  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+        render_pald_response(response)
+
+    except Exception as e:  # pragma: no cover
+        # Graceful UI error for end users
+        try:
+            import streamlit as st
+            st.error(f"PALD UI rendering failed: {e}")
+        except Exception:
+            pass
+
+def is_defer_enabled() -> bool:
+    """
+    Read defer flag from central config if available.
+    This is optional; the actual defer_notice is expected to be set in the response.
+    """
+    try:
+        from config.config import config
+        cfg = getattr(config, "PALDEnhancementConfig", None)
+        return bool(getattr(cfg, "defer_bias_scan", False))
+    except Exception:
+        return False
+
+# USAGE (example):
+#   - When you receive a PALDProcessingResponse instance named `resp`, call:
+#       validate_and_render_pald(resp)
+#   - The function will validate resp.pald_light, log stripped keys, and render the UI parts.
+# === End Task 9 append-only ===================================================
