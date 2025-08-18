@@ -762,3 +762,40 @@ def render_image_customization(user_id: UUID, base_image_path: str) -> str | Non
 def render_batch_generation(user_id: UUID, embodiment_data: dict[str, Any]) -> list[str]:
     """Render batch generation interface."""
     return image_ui.render_batch_generation(user_id, embodiment_data)
+
+# === Task 9: Minimal image rendering helpers (append-only) ====================
+from pathlib import Path
+from typing import Optional, Sequence, Union
+
+def display_image(image_path: Union[str, Path], caption: Optional[str] = None, width: Optional[int] = None) -> None:
+    """Display a single image. UI-only; no business logic."""
+    try:
+        import streamlit as st  # guarded
+    except Exception:
+        return
+    try:
+        st.image(str(image_path), caption=caption, width=width)
+    except Exception as e:  # pragma: no cover
+        # Use the module-level logger if available
+        try:
+            logger.error("display_image_failed path=%s error=%s", image_path, e)
+        except Exception:
+            pass
+
+def display_thumbnail_grid(images: Sequence[Union[str, Path]], cols: int = 3, max_items: Optional[int] = None) -> None:
+    """Display thumbnails in a simple grid. UI-only; no business logic."""
+    try:
+        import streamlit as st  # guarded
+    except Exception:
+        return
+
+    items = list(images) if images is not None else []
+    if max_items is not None:
+        items = items[:max_items]
+
+    cols = max(1, int(cols))
+    st_cols = st.columns(cols)
+    for idx, p in enumerate(items):
+        with st_cols[idx % cols]:
+            st.image(str(p))
+# === End Task 9 append-only ===================================================

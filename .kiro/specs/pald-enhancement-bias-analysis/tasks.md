@@ -56,7 +56,7 @@
   - Deliverables: `SchemaEvolutionManager` (detect/queue fields), DB migrations (`schema_field_candidates`, `pald_processing_logs`, `bias_analysis_jobs/_results`, indexes), model updates, `PALDEnhancementConfig` incl. ENV-overrides, runtime validation, minimal docs & migration tests.
   - _Requirements: 2.4, 2.5, 5.3, 5.4, 5.5, 5.6, 6.7, 7.1, 7.2, 7.3, 7.4, 7.5, 8.1, 8.2_
 
-- [ ] 8. Background Bias Worker (MVP) + Job Lifecycle (bundles former 11)
+- [x] 8. Background Bias Worker (MVP) + Job Lifecycle (bundles former 11)
   - Deliverables: Worker with retry (exponential backoff), DLQ, status tracking, batch-sizes config, structured logs, CLI entrypoint; integration tests for recovery paths.
   - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 7.4, 7.5_
 
