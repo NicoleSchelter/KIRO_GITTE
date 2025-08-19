@@ -12,26 +12,23 @@ from src.data.models import ConsentType
 from src.data.repositories import ConsentRepository
 from src.data.schemas import ConsentRecordCreate, ConsentRecordResponse
 
+# Entfernen: lokale class ConsentError/ConsentRequiredError/ConsentWithdrawalError
+
+from src.exceptions import (
+    ConsentError,
+    ConsentRequiredError,
+    ConsentWithdrawalError,
+)
+
+# Re-Export, damit Tests weiter "from src.logic.consent import ConsentRequiredError" nutzen können:
+__all__ = [
+    "ConsentError",
+    "ConsentRequiredError",
+    "ConsentWithdrawalError",
+    "ConsentLogic",
+]
+
 logger = logging.getLogger(__name__)
-
-
-class ConsentError(Exception):
-    """Base exception for consent-related errors."""
-
-    pass
-
-
-class ConsentRequiredError(ConsentError):
-    """Raised when consent is required but not provided."""
-
-    pass
-
-
-class ConsentWithdrawalError(ConsentError):
-    """Raised when consent withdrawal fails."""
-
-    pass
-
 
 class ConsentLogic:
     """Consent management business logic."""
@@ -158,7 +155,10 @@ class ConsentLogic:
             ConsentRequiredError: If consent is not given
         """
         if not self.check_consent(user_id, consent_type):
-            raise ConsentRequiredError(f"Consent required for {consent_type.value}")
+            raise ConsentRequiredError(
+                f"Consent required for {consent_type.value}",
+                required=[consent_type.value],
+            )
 
     def get_user_consents(self, user_id: UUID) -> list[ConsentRecordResponse]:
         """
@@ -239,7 +239,11 @@ class ConsentLogic:
                 missing_consents.append(consent_type.value)
 
         if missing_consents:
-            raise ConsentRequiredError(f"Missing required consents: {', '.join(missing_consents)}")
+            raise ConsentRequiredError(
+                f"Missing required consents: {', '.join(missing_consents)}",
+                required=missing_consents,
+            )
+
 
     def is_consent_gate_enabled(self) -> bool:
         """

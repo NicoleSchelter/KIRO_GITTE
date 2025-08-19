@@ -22,12 +22,15 @@ from src.exceptions import (
     PersonDetectionError,
     UnsupportedImageFormatError,
 )
+from src.config import IMAGE_RETRY  # zentrale Retry-Parameter für Bild-Operationen
 from src.utils.ux_error_handler import (
-    RetryConfig,
     with_image_error_handling,
     with_retry,
-    ux_error_handler,
+    image_error_boundary,
+    RetryConfig,
+    record_ux_error,  # nur falls verwendet
 )
+
 from src.utils.circuit_breaker import circuit_breaker, CircuitBreakerConfig
 from src.services.performance_monitoring_service import monitor_performance, performance_monitor
 from src.services.lazy_loading_service import lazy_resource, lazy_loader, PersonDetectionModel, BackgroundRemovalModel
@@ -177,6 +180,7 @@ class ImageIsolationService:
         )
     
     @with_image_error_handling(operation="quality_analysis", fallback_to_original=False)
+    @with_retry(cfg=RetryConfig(**IMAGE_RETRY))
     @monitor_performance("image_quality_analysis")
     @cached(key_func=lambda self, image_path: f"quality:{image_path}:{os.path.getmtime(image_path)}", ttl_seconds=300)
     def analyze_image_quality(self, image_path: str) -> QualityAnalysis:

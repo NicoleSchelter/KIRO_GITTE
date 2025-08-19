@@ -16,6 +16,12 @@ from src.utils.circuit_breaker import get_all_circuit_breaker_stats, get_unhealt
 from src.utils.error_handler import get_error_stats, get_recent_errors
 from src.utils.ux_error_handler import get_ux_error_stats
 
+try:
+    import psutil as psutil  # expose module attribute for tests to patch
+except Exception:
+    class psutil:  # minimal stub so patching works even without the package
+        pass
+
 # Optional metrics (no-op fallback if not present)
 try:
     from src.monitoring.metrics import MetricsCollector  # created elsewhere in your patch set

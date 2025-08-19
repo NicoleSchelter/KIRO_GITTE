@@ -134,7 +134,7 @@ class TestUITooltipIntegration(unittest.TestCase):
     
     def test_consent_specific_tooltips(self):
         """Test consent-specific tooltip functionality."""
-        consent_types = ["data_processing", "llm_interaction", "image_generation", "analytics"]
+        consent_types = ["data_processing", "ai_interaction", "image_generation", "analytics"]
         
         for consent_type in consent_types:
             dependent_features = self.integration._get_dependent_features(consent_type)

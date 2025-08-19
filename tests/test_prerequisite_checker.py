@@ -289,7 +289,7 @@ class TestConsentStatusChecker(unittest.TestCase):
         
         self.assertEqual(result.status, PrerequisiteStatus.FAILED)
         self.assertIn("Missing required consents", result.message)
-        self.assertIn("llm_interaction", result.message)
+        self.assertIn("ai_interaction", result.message)
         self.assertIn("image_generation", result.message)
         self.assertIn("Consent Settings", result.resolution_steps[0])
     

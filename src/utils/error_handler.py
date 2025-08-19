@@ -1,28 +1,28 @@
-"""
-Comprehensive error handling utilities for GITTE system.
-Provides centralized error handling, logging, and user feedback mechanisms.
-"""
+# optional – verhindert, dass Typnamen in Annotationen zur Laufzeit aufgelöst werden
+from __future__ import annotations
 
-import logging
-import sys
-import traceback
-import uuid
-from collections.abc import Callable
 from datetime import datetime
 from functools import wraps
-from typing import Any
-
+from typing import Any, Dict, Optional
+from uuid import uuid4
+import logging
+import re
 import streamlit as st
+import sys
+import traceback
+from collections.abc import Callable
 
+# importiere die tatsächlich verwendeten Fehlerklassen/Enums
 from src.exceptions import (
-    AuthorizationError,
-    DatabaseError,
-    ErrorSeverity,
     GITTEError,
     NetworkError,
+    DatabaseError,
+    AuthorizationError,
     SystemError,
+    ErrorSeverity,
 )
 
+# Logger definieren 
 logger = logging.getLogger(__name__)
 
 
@@ -37,46 +37,62 @@ class ErrorHandler:
     def handle_error(
         self,
         error: Exception,
-        context: dict[str, Any] | None = None,
+        context: Dict[str, Any] | None = None,
         user_id: str | None = None,
         request_id: str | None = None,
         show_user_message: bool = True,
-    ) -> dict[str, Any]:
+        *,                              # ab hier nur noch keyword-args für neue Felder
+        component: str = "unknown",
+    ) -> Dict[str, Any]:
         """
-        Handle an error with logging and user feedback.
-
-        Args:
-            error: The exception that occurred
-            context: Additional context information
-            user_id: ID of the user who encountered the error
-            request_id: Request ID for tracing
-            show_user_message: Whether to show user-friendly message in UI
-
-        Returns:
-            Dict containing error information
+        Vereinheitlichte Fehlerbehandlung:
+        - Rückwärtskompatibel zu bestehenden Aufrufen (ux_error_handler nutzt: error, context, show_user_message).
+        - Ergänzt optional 'component' (neue .rej-Logik).
+        - Generiert/übernimmt request_id.
+        - Fügt, wenn möglich, 'user_message' und 'severity' hinzu (ohne harte PALD-Abhängigkeit).
         """
-        # Generate request ID if not provided
-        if not request_id:
-            request_id = str(uuid.uuid4())
+        # Robust: request_id festlegen (Param > vorhandenes Attribut > neu generieren)
+        rid = request_id or getattr(self, "request_id", None) or str(uuid4())
+        self.request_id = rid
 
-        # Convert to GITTE error if needed
-        if not isinstance(error, GITTEError):
-            error = self._convert_to_gitte_error(error)
+        # In dein bestehendes Schema konvertieren
+        gitte_error = self._convert_to_gitte_error(error)
 
-        # Create error record
-        error_record = self._create_error_record(error, context, user_id, request_id)
+        # Basis-Record nach deinem bisherigen Format
+        record = self._create_error_record(
+            gitte_error,
+            context=context or {},
+            user_id=user_id,
+            request_id=rid,
+        )
 
-        # Log the error
-        self._log_error(error_record)
+        # Additive Felder aus der .rej-Variante
+        record["component"] = component or (context or {}).get("component") or "unknown"
 
-        # Track error statistics
-        self._track_error(error_record)
+        # Optionale Severity (kein PALD-Import nötig – wir lesen ab, wenn vorhanden)
+        sev = getattr(gitte_error, "severity", None) or getattr(error, "severity", None)
+        if sev is not None and "severity" not in record:
+            # Enum? -> .value; sonst String/Objekt repräsentieren
+            record["severity"] = getattr(sev, "value", str(sev))
 
-        # Show user message if in Streamlit context
+        # Optionale User-Message (nur wenn deine Helper-Methode existiert)
+        if hasattr(self, "_get_user_message") and "user_message" not in record:
+            try:
+                record["user_message"] = self._get_user_message(gitte_error)
+            except Exception:
+                # defensiv – Logging nicht gefährden
+                pass
+
+        # Logging & Statistiken wie gehabt
+        self._log_error(record)
+        self._track_error(record)
+
+        # Benutzerhinweis (rückwärtskompatibel)
         if show_user_message and self._is_streamlit_context():
-            self._show_user_message(error)
+            self._show_user_message(gitte_error)
 
-        return error_record
+        return record
+
 
     def _convert_to_gitte_error(self, error: Exception) -> GITTEError:
         """Convert generic exception to GITTEError."""
@@ -104,29 +120,75 @@ class ErrorHandler:
         request_id: str,
     ) -> dict[str, Any]:
         """Create comprehensive error record."""
+        # Nutze den Original-Fehler, falls vorhanden, sonst den GITTEError
+        exc_for_tb = error.cause if getattr(error, "cause", None) else error
+        tb = "".join(traceback.TracebackException.from_exception(exc_for_tb).format())
+
         return {
             "timestamp": datetime.now().isoformat(),
             "request_id": request_id,
             "user_id": user_id,
-            "error": error.to_dict(),
+            "error": error.to_dict(),  # -> in exceptions.py als Strings serialisiert
             "context": context or {},
-            "traceback": traceback.format_exc(),
+            "traceback": tb,
             "system_info": {"python_version": sys.version, "platform": sys.platform},
         }
+
+
 
     def _log_error(self, error_record: dict[str, Any]) -> None:
         """Log error with appropriate level."""
         error_info = error_record["error"]
-        severity = error_info["severity"]
+
+        # Severity robust normalisieren (String -> Enum)
+        sev = error_info.get("severity")
+        if isinstance(sev, ErrorSeverity):
+            severity = sev
+        elif isinstance(sev, str):
+            try:
+                severity = ErrorSeverity[sev]   # "MEDIUM"
+            except KeyError:
+                try:
+                    severity = ErrorSeverity(sev)  # "medium"
+                except Exception:
+                    severity = ErrorSeverity.MEDIUM
+        else:
+            severity = ErrorSeverity.MEDIUM
+
+        # Category sauber serialisieren (in to_dict meist String)
+        category = error_info.get("category")
+        if hasattr(category, "value"):
+            category = category.value
 
         log_data = {
             "request_id": error_record["request_id"],
             "user_id": error_record["user_id"],
-            "error_code": error_info["error_code"],
-            "category": error_info["category"],
-            "error_message": error_info["message"],  # Renamed to avoid conflict
-            "details": error_info["details"],
+            "error_code": error_info.get("error_code"),
+            "category": category,
+            "error_message": error_info.get("message"),
+            "details": error_info.get("details"),
         }
+
+        # Komponente immer mitloggen
+        log_data["component"] = error_record.get("component", "unknown")
+
+        # --- PII-Redaktion: immer aktiv, bevor geloggt wird ---
+        def _redact_obj(obj):
+            if isinstance(obj, dict):
+                return {k: _redact_obj(v) for k, v in obj.items()}
+            if isinstance(obj, list):
+                return [_redact_obj(v) for v in obj]
+            if isinstance(obj, str):
+                return PIIRedactor.redact(obj)
+            return obj
+
+        try:
+            log_data["error_message"] = PIIRedactor.redact(str(log_data.get("error_message")))
+            log_data["details"] = _redact_obj(log_data.get("details"))
+        except Exception:
+            # Redaktionsfehler sollen das Logging nicht verhindern
+            pass
+        # --- Ende PII-Redaktion ---
 
         if severity == ErrorSeverity.CRITICAL:
             logger.critical("Critical error occurred", extra=log_data)
@@ -137,11 +199,14 @@ class ErrorHandler:
         else:
             logger.info("Low severity error occurred", extra=log_data)
 
-        # Log full traceback for debugging
-        if severity in [ErrorSeverity.HIGH, ErrorSeverity.CRITICAL]:
+        if severity in (ErrorSeverity.HIGH, ErrorSeverity.CRITICAL):
             logger.debug(
-                f"Full traceback for {error_record['request_id']}: {error_record['traceback']}"
+                "Full traceback for %s: %s",
+                error_record["request_id"],
+                error_record["traceback"],
             )
+
+
 
     def _track_error(self, error_record: dict[str, Any]) -> None:
         """Track error statistics."""
@@ -171,7 +236,6 @@ class ErrorHandler:
     def _is_streamlit_context(self) -> bool:
         """Check if running in Streamlit context."""
         try:
-            import streamlit as st
 
             # Try to access session state to check if in Streamlit context
             _ = st.session_state
@@ -205,6 +269,71 @@ class ErrorHandler:
 # Global error handler instance
 error_handler = ErrorHandler()
 
+class ErrorBoundary:
+    """Context manager for error boundary functionality."""
+
+    def __init__(
+        self,
+        fallback_message: str = "An error occurred in this section.",
+        show_details: bool = False,
+        context: dict[str, Any] | None = None,
+    ):
+        self.fallback_message = fallback_message
+        self.show_details = show_details
+        self.context = context
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            # Handle the error
+            error_handler.handle_error(
+                error=exc_val,
+                context=self.context,
+                show_user_message=False,
+                component="ux/error_boundary",
+            )
+            # Show fallback message
+            try:
+
+                st.error(self.fallback_message)
+
+                if self.show_details and isinstance(exc_val, GITTEError):
+                    with st.expander("Error Details"):
+                        st.write(f"**Error Code:** {exc_val.error_code}")
+                        st.write(f"**Category:** {exc_val.category.value}")
+                        st.write(f"**Severity:** {exc_val.severity.value}")
+                        if exc_val.details:
+                            st.json(exc_val.details)
+            except:
+                pass
+
+            # Suppress the exception
+            return True
+
+        return False
+
+# --- merged new class from .rej ---
+class PIIRedactor:
+    """Helper class to redact PII from log messages."""
+
+    # robuster & einfacher
+    EMAIL_PATTERN = re.compile(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b', re.IGNORECASE)
+    UUID_PATTERN = re.compile(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b', re.IGNORECASE)
+    # 2 Gruppen: (Prefix) (Wert) → wir behalten Prefix, ersetzen nur den Wert
+    TOKEN_PATTERN = re.compile(r'(\b(?:token|key|secret|password)["\']?\s*[:=]\s*["\']?)([^\s"\']+)', re.IGNORECASE)
+
+    @classmethod
+    def redact(cls, text: str) -> str:
+        """Redact PII from text."""
+        if not isinstance(text, str):
+            text = str(text)
+
+        text = cls.EMAIL_PATTERN.sub('[EMAIL_REDACTED]', text)
+        text = cls.UUID_PATTERN.sub('[UUID_REDACTED]', text)
+        text = cls.TOKEN_PATTERN.sub(r'\1[TOKEN_REDACTED]', text)
+        return text
 
 def handle_errors(
     show_user_message: bool = True, context: dict[str, Any] | None = None, reraise: bool = True
@@ -227,7 +356,6 @@ def handle_errors(
                 # Get user ID from session state if available
                 user_id = None
                 try:
-                    import streamlit as st
 
                     user_id = st.session_state.get("user_id")
                 except:
@@ -246,7 +374,6 @@ def handle_errors(
         return wrapper
 
     return decorator
-
 
 def safe_execute(
     func: Callable,
@@ -276,7 +403,6 @@ def safe_execute(
         # Get user ID from session state if available
         user_id = None
         try:
-            import streamlit as st
 
             user_id = st.session_state.get("user_id")
         except:
@@ -288,7 +414,6 @@ def safe_execute(
         )
 
         return default_return
-
 
 def graceful_degradation(
     primary_func: Callable,
@@ -321,7 +446,6 @@ def graceful_degradation(
 
                 # Show fallback message
                 try:
-                    import streamlit as st
 
                     st.info(f"ℹ️ {fallback_message}")
                 except:
@@ -346,26 +470,21 @@ def graceful_degradation(
 
     return decorator
 
-
 def get_error_stats() -> dict[str, Any]:
     """Get global error statistics."""
     return error_handler.get_error_stats()
-
 
 def get_recent_errors(limit: int = 20) -> list[dict[str, Any]]:
     """Get recent errors."""
     return error_handler.get_recent_errors(limit)
 
-
 def clear_error_stats() -> None:
     """Clear error statistics."""
     error_handler.clear_stats()
 
-
 def render_error_dashboard() -> None:
     """Render error monitoring dashboard in Streamlit."""
     try:
-        import streamlit as st
 
         st.subheader("🚨 Error Monitoring Dashboard")
 
@@ -392,6 +511,8 @@ def render_error_dashboard() -> None:
                 st.write(f"**{error_code}**: {count} occurrences")
 
         # Recent errors
+        def _fmt_enum(v):
+            return getattr(v, "value", v)
         recent_errors = get_recent_errors(10)
         if recent_errors:
             st.subheader("Recent Errors")
@@ -400,8 +521,8 @@ def render_error_dashboard() -> None:
                     f"{error_record['error']['error_code']} - {error_record['timestamp']}"
                 ):
                     st.write(f"**Message:** {error_record['error']['message']}")
-                    st.write(f"**Category:** {error_record['error']['category']}")
-                    st.write(f"**Severity:** {error_record['error']['severity']}")
+                    st.write(f"**Category:** {_fmt_enum(error_record['error']['category'])}")
+                    st.write(f"**Severity:** {_fmt_enum(error_record['error']['severity'])}")
                     st.write(f"**User ID:** {error_record['user_id'] or 'Anonymous'}")
                     st.write(f"**Request ID:** {error_record['request_id']}")
 
@@ -418,45 +539,3 @@ def render_error_dashboard() -> None:
     except Exception as e:
         st.error(f"Error rendering dashboard: {e}")
 
-
-class ErrorBoundary:
-    """Context manager for error boundary functionality."""
-
-    def __init__(
-        self,
-        fallback_message: str = "An error occurred in this section.",
-        show_details: bool = False,
-        context: dict[str, Any] | None = None,
-    ):
-        self.fallback_message = fallback_message
-        self.show_details = show_details
-        self.context = context
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type is not None:
-            # Handle the error
-            error_handler.handle_error(error=exc_val, context=self.context, show_user_message=False)
-
-            # Show fallback message
-            try:
-                import streamlit as st
-
-                st.error(self.fallback_message)
-
-                if self.show_details and isinstance(exc_val, GITTEError):
-                    with st.expander("Error Details"):
-                        st.write(f"**Error Code:** {exc_val.error_code}")
-                        st.write(f"**Category:** {exc_val.category.value}")
-                        st.write(f"**Severity:** {exc_val.severity.value}")
-                        if exc_val.details:
-                            st.json(exc_val.details)
-            except:
-                pass
-
-            # Suppress the exception
-            return True
-
-        return False
