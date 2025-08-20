@@ -534,6 +534,123 @@ class SystemHealthChecker(PrerequisiteChecker):
         return PrerequisiteType.RECOMMENDED
 
 
+class ImageIsolationPrereqChecker(PrerequisiteChecker):
+    """Image isolation service availability checker."""
+    
+    def __init__(self):
+        super().__init__("Image Isolation Service", PrerequisiteType.RECOMMENDED)
+    
+    def check(self) -> PrerequisiteResult:
+        """Check if image isolation service is available."""
+        try:
+            from config.config import config
+            
+            # Check if endpoint is configured
+            if not config.image_isolation.endpoint:
+                return PrerequisiteResult(
+                    name=self.name,
+                    status=PrerequisiteStatus.FAILED,
+                    message="Image isolation endpoint not configured",
+                    prerequisite_type=self.prerequisite_type,
+                    resolution_steps=[
+                        "Set ISOLATION_ENDPOINT environment variable",
+                        "Configure endpoint in config.image_isolation.endpoint",
+                        "Ensure endpoint points to valid service"
+                    ]
+                )
+            
+            # Try to ping the endpoint
+            import requests
+            
+            # Use HEAD request for fast health check
+            response = requests.head(
+                config.image_isolation.endpoint,
+                timeout=5,
+                allow_redirects=False
+            )
+            
+            if response.status_code in [200, 405]:  # 405 means method not allowed, but service is up
+                return PrerequisiteResult(
+                    name=self.name,
+                    status=PrerequisiteStatus.PASSED,
+                    message="Image isolation service is available",
+                    prerequisite_type=self.prerequisite_type,
+                    details={
+                        "endpoint": config.image_isolation.endpoint,
+                        "response_time": response.elapsed.total_seconds()
+                    }
+                )
+            else:
+                return PrerequisiteResult(
+                    name=self.name,
+                    status=PrerequisiteStatus.FAILED,
+                    message=f"Image isolation service returned status {response.status_code}",
+                    prerequisite_type=self.prerequisite_type,
+                    resolution_steps=[
+                        "Check if isolation service is running",
+                        "Verify endpoint URL is correct",
+                        "Check service logs for errors"
+                    ],
+                    details={
+                        "endpoint": config.image_isolation.endpoint,
+                        "status_code": response.status_code
+                    }
+                )
+                
+        except requests.exceptions.ConnectionError:
+            return PrerequisiteResult(
+                name=self.name,
+                status=PrerequisiteStatus.FAILED,
+                message="Cannot connect to image isolation service",
+                prerequisite_type=self.prerequisite_type,
+                resolution_steps=[
+                    "Check if isolation service is running",
+                    "Verify network connectivity",
+                    "Check firewall settings"
+                ],
+                details={
+                    "endpoint": config.image_isolation.endpoint,
+                    "error": "Connection failed"
+                }
+            )
+        except requests.exceptions.Timeout:
+            return PrerequisiteResult(
+                name=self.name,
+                status=PrerequisiteStatus.FAILED,
+                message="Image isolation service timeout",
+                prerequisite_type=self.prerequisite_type,
+                resolution_steps=[
+                    "Check service performance",
+                    "Increase timeout settings",
+                    "Verify network stability"
+                ],
+                details={
+                    "endpoint": config.image_isolation.endpoint,
+                    "error": "Request timeout"
+                }
+            )
+        except Exception as e:
+            return PrerequisiteResult(
+                name=self.name,
+                status=PrerequisiteStatus.FAILED,
+                message=f"Failed to check image isolation service: {str(e)}",
+                prerequisite_type=self.prerequisite_type,
+                resolution_steps=[
+                    "Check service configuration",
+                    "Review error logs",
+                    "Verify endpoint accessibility"
+                ],
+                details={
+                    "endpoint": config.image_isolation.endpoint,
+                    "error": str(e)
+                }
+            )
+    
+    @property
+    def prerequisite_type(self) -> PrerequisiteType:
+        return PrerequisiteType.RECOMMENDED
+
+
 class PrerequisiteValidationService:
     """Service for managing and running prerequisite checks."""
     
@@ -744,6 +861,7 @@ def create_default_prerequisite_service(
     service.register_checker(OllamaConnectivityChecker())
     service.register_checker(DatabaseConnectivityChecker())
     service.register_checker(SystemHealthChecker())
+    service.register_checker(ImageIsolationPrereqChecker())
     
     # Register user-specific checkers if provided
     if user_id and consent_service:

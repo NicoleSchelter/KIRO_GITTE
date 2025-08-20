@@ -59,6 +59,10 @@ class ImageIsolationConfig:
     """Image isolation and quality detection configuration."""
 
     enabled: bool = True
+    endpoint: str = "http://localhost:8080/isolate"  # URL or local binary path
+    timeout_seconds: int = 20
+    retries: int = 2
+    model_default: str = "u2net"
     detection_confidence_threshold: float = 0.7
     edge_refinement_enabled: bool = True
     background_removal_method: str = "rembg"  # rembg, opencv, transparent, uniform
@@ -70,6 +74,14 @@ class ImageIsolationConfig:
     def __post_init__(self):
         if env_enabled := os.getenv("IMAGE_ISOLATION_ENABLED"):
             self.enabled = env_enabled.lower() == "true"
+        if env_endpoint := os.getenv("ISOLATION_ENDPOINT"):
+            self.endpoint = env_endpoint
+        if env_timeout := os.getenv("ISOLATION_TIMEOUT"):
+            self.timeout_seconds = int(env_timeout)
+        if env_retries := os.getenv("ISOLATION_RETRIES"):
+            self.retries = int(env_retries)
+        if env_model := os.getenv("ISOLATION_MODEL"):
+            self.model_default = env_model
         if env_threshold := os.getenv("IMAGE_ISOLATION_CONFIDENCE_THRESHOLD"):
             self.detection_confidence_threshold = float(env_threshold)
 

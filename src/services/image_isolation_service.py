@@ -6,7 +6,7 @@ Provides automated image isolation, background removal, and quality detection ca
 import logging
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -39,20 +39,24 @@ from src.services.caching_service import cached, cache_service
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class IsolationResult:
     """Result of image isolation process."""
     
-    success: bool
-    isolated_image_path: Optional[str]
-    original_image_path: str
-    confidence_score: float
-    processing_time: float
-    method_used: str
+    mask_path: str
+    foreground_path: Optional[str] = None
+    stats: dict
+    model_used: str
+    success: bool = True
+    isolated_image_path: Optional[str] = None
+    original_image_path: str = ""
+    confidence_score: float = 0.0
+    processing_time: float = 0.0
+    method_used: str = ""
     error_message: Optional[str] = None
 
 
-@dataclass
+@dataclass(kw_only=True)
 class QualityAnalysis:
     """Result of image quality analysis."""
     
@@ -64,7 +68,7 @@ class QualityAnalysis:
     confidence_scores: dict[str, float]
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ImageIsolationConfig:
     """Configuration for image isolation service."""
     
@@ -98,6 +102,148 @@ class ImageIsolationService:
         self.person_detector = None  # Will be loaded lazily
         self.background_remover = None  # Will be loaded lazily
         
+    def isolate(self, image_path: str, model: str | None = None, **opts) -> dict:
+        """
+        Isolate image using configured endpoint with retries and circuit breaker.
+        
+        Args:
+            image_path: Path to input image
+            model: Model to use (defaults to config.model_default)
+            **opts: Additional options
+            
+        Returns:
+            dict with mask_path, foreground_path, stats, model_used
+            
+        Raises:
+            RequiredPrerequisiteError: When critical config is missing
+            ServiceUnavailableError: When service is unavailable
+            PrerequisiteCheckFailedError: When service returns invalid response
+        """
+        from config.config import config
+        from src.exceptions import RequiredPrerequisiteError, ServiceUnavailableError, PrerequisiteCheckFailedError
+        
+        # Validate required configuration
+        if not config.image_isolation.endpoint:
+            raise RequiredPrerequisiteError(
+                "Image Isolation Service",
+                "Missing endpoint configuration",
+                resolution_steps=[
+                    "Set ISOLATION_ENDPOINT environment variable",
+                    "Configure endpoint in config.image_isolation.endpoint",
+                    "Check network connectivity to endpoint",
+                ],
+                details={"missing_config": "image_isolation.endpoint"},
+                severity=None,  # optional; nur setzen, wenn du willst
+            )
+        
+        # Use configured model or default
+        model_to_use = model or config.image_isolation.model_default
+        
+        # Create retry and circuit breaker configs
+        retry_config = RetryConfig(
+            max_retries=config.image_isolation.retries,
+            base_delay=1.0,
+            retryable_exceptions=(TimeoutError, OSError)
+        )
+        
+        circuit_config = CircuitBreakerConfig(
+            failure_threshold=3,
+            recovery_timeout=30,
+            expected_exception=Exception
+        )
+        
+        # Execute with retry and circuit breaker
+        try:
+            with circuit_breaker("image_isolation", config=circuit_config):
+                with with_retry(retry_config):
+                    return self._execute_isolation(image_path, model_to_use, **opts)
+        except (TimeoutError, OSError) as e:
+            raise ServiceUnavailableError(
+                "Image Isolation Service",
+                f"Connection failed: {str(e)}",
+                connection_details={"endpoint": config.image_isolation.endpoint}
+            )
+        except Exception as e:
+            raise PrerequisiteCheckFailedError(
+                "Image Isolation Service",
+                f"Unexpected response: {str(e)}"
+            )
+
+    def _execute_isolation(self, image_path: str, model: str, **opts) -> dict:
+        """
+        Execute image isolation with the configured endpoint.
+        
+        Args:
+            image_path: Path to input image
+            model: Model to use for isolation
+            **opts: Additional options
+            
+        Returns:
+            dict with isolation results
+        """
+        import tempfile
+        import os
+        import requests
+        from pathlib import Path
+        
+        start_time = time.time()
+        
+        # Create temporary files for output
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as mask_file, \
+             tempfile.NamedTemporaryFile(suffix=".png", delete=False) as fg_file:
+            
+            mask_path = mask_file.name
+            fg_path = fg_file.name
+        
+        try:
+            # Prepare request data
+            with open(image_path, 'rb') as img_file:
+                files = {'image': img_file}
+                data = {'model': model, **opts}
+                
+                # Make request to isolation endpoint
+                response = requests.post(
+                    config.image_isolation.endpoint,
+                    files=files,
+                    data=data,
+                    timeout=config.image_isolation.timeout_seconds
+                )
+                
+                response.raise_for_status()
+                
+                # Parse response and save files
+                result_data = response.json()
+                
+                # Save mask if provided
+                if 'mask' in result_data:
+                    with open(mask_path, 'wb') as f:
+                        f.write(result_data['mask'].encode() if isinstance(result_data['mask'], str) else result_data['mask'])
+                
+                # Save foreground if provided
+                if 'foreground' in result_data:
+                    with open(fg_path, 'wb') as f:
+                        f.write(result_data['foreground'].encode() if isinstance(result_data['foreground'], str) else result_data['foreground'])
+                
+                processing_time = time.time() - start_time
+                
+                return {
+                    'mask_path': mask_path,
+                    'foreground_path': fg_path if os.path.exists(fg_path) and os.path.getsize(fg_path) > 0 else None,
+                    'stats': {
+                        'processing_time': processing_time,
+                        'model_used': model,
+                        'endpoint': config.image_isolation.endpoint
+                    },
+                    'model_used': model
+                }
+                
+        except Exception as e:
+            # Clean up temp files on error
+            for path in [mask_path, fg_path]:
+                if os.path.exists(path):
+                    os.unlink(path)
+            raise e
+
     @with_image_error_handling(
         operation="person_isolation",
         fallback_to_original=True,

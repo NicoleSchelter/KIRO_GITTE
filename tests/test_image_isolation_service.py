@@ -110,6 +110,66 @@ class TestImageIsolationService:
         assert service.person_detector is not None or service.person_detector is None  # May fail to load
         assert service.background_remover is None  # Not implemented yet
     
+    def test_isolate_missing_config_raises_error(self):
+        """Test that missing endpoint config raises RequiredPrerequisiteError."""
+        from src.exceptions import RequiredPrerequisiteError
+        
+        # Create config without endpoint
+        config = ImageIsolationConfig(endpoint="")
+        service = ImageIsolationService(config)
+        
+        with pytest.raises(RequiredPrerequisiteError) as exc_info:
+            service.isolate("test.jpg")
+        
+        assert "Missing endpoint configuration" in str(exc_info.value)
+        assert "ISOLATION_ENDPOINT" in str(exc_info.value.resolution_steps[0])
+    
+    def test_isolate_success_returns_structured_dict(self, isolation_config, test_image_path):
+        """Test successful isolation returns structured dict with required fields."""
+        from unittest.mock import patch, Mock
+        
+        # Mock the _execute_isolation method
+        with patch.object(ImageIsolationService, '_execute_isolation') as mock_execute:
+            mock_execute.return_value = {
+                'mask_path': '/tmp/mask.png',
+                'foreground_path': '/tmp/fg.png',
+                'stats': {'processing_time': 1.5, 'model_used': 'u2net'},
+                'model_used': 'u2net'
+            }
+            
+            service = ImageIsolationService(isolation_config)
+            result = service.isolate(test_image_path, model="u2net")
+            
+            assert isinstance(result, dict)
+            assert 'mask_path' in result
+            assert 'foreground_path' in result
+            assert 'stats' in result
+            assert 'model_used' in result
+            assert result['model_used'] == 'u2net'
+            assert result['stats']['processing_time'] == 1.5
+    
+    def test_isolate_uses_config_defaults(self, isolation_config, test_image_path):
+        """Test that isolation uses config defaults when no model specified."""
+        from unittest.mock import patch, Mock
+        
+        # Set default model in config
+        isolation_config.model_default = "test_model"
+        
+        with patch.object(ImageIsolationService, '_execute_isolation') as mock_execute:
+            mock_execute.return_value = {
+                'mask_path': '/tmp/mask.png',
+                'foreground_path': None,
+                'stats': {'processing_time': 1.0, 'model_used': 'test_model'},
+                'model_used': 'test_model'
+            }
+            
+            service = ImageIsolationService(isolation_config)
+            result = service.isolate(test_image_path)  # No model specified
+            
+            # Verify default model was used
+            mock_execute.assert_called_once_with(test_image_path, "test_model", **{})
+            assert result['model_used'] == 'test_model'
+    
     def test_isolate_person_disabled(self, test_image_path):
         """Test isolation when service is disabled."""
         config = ImageIsolationConfig(enabled=False)

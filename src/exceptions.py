@@ -83,18 +83,25 @@ class GITTEError(Exception):
         self.category = category
         self.severity = severity
         self.details = details or {}
+        
+        # Setze error_code aus kwargs falls vorhanden
+        self.error_code = kwargs.pop("error_code", None)
+        # Setze cause aus kwargs falls vorhanden
+        self.cause = kwargs.pop("cause", None)
 
     def __str__(self) -> str:
         return self.message
+    
+    def to_dict(self) -> Dict[str, Any]:
         """Convert exception to dictionary for logging/serialization."""
         return {
-            "error_code": self.error_code,
             "message": self.message,
             "user_message": self.user_message,
-            "category": self.category.value,
-            "severity": self.severity.value,
+            "error_code": getattr(self, 'error_code', None),
+            "category": self.category.value if self.category else None,
+            "severity": self.severity.value if self.severity else None,
             "details": self.details,
-            "cause": str(self.cause) if self.cause else None,
+            "cause": getattr(self, 'cause', None),
         }
 
 
@@ -648,14 +655,12 @@ class ImageCorruptionError(ImageProcessingError):
     """Image corruption or loading errors."""
 
     def __init__(self, image_path: str, **kwargs):
-        kw = _filtered_kwargs(kwargs, "user_message", "details", "category", "severity")
         super().__init__(
             f"Image file is corrupted or cannot be loaded: {image_path}",
-            user_message="The image file appears to be corrupted. Please try uploading a different image.",
-            severity=ErrorSeverity.MEDIUM,
             details={"image_path": image_path},
-            **kw,
+            **kwargs,
         )
+        self.user_message = "The image file appears to be corrupted. Please try uploading a different image."
 # Prerequisite Check Errors
 class PrerequisiteError(GITTEError):
     """Base class for prerequisite check errors."""

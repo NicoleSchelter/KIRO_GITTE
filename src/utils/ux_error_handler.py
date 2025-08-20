@@ -423,6 +423,18 @@ class UXErrorHandler:
     def handle_image_processing_error(self, error: BaseException, image_path: str, operation: str) -> Dict[str, Any]:
         """Return a normalized payload for image errors (and count them)."""
         record_ux_error("image_processing", {"exc": type(error).__name__, "op": operation, "image_path": image_path})
+        
+        # Passe suggested_action basierend auf Fehlertyp an
+        error_msg = str(error).lower()
+        if "timeout" in error_msg or "timed out" in error_msg:
+            suggested_action = "Try with a smaller image or reduce processing parameters due to timeout"
+        elif "corrupt" in error_msg:
+            suggested_action = "Try uploading a different image file"
+        elif "format" in error_msg:
+            suggested_action = "Convert image to supported format (JPEG, PNG)"
+        else:
+            suggested_action = "Try with a smaller image or different format"
+        
         return {
             "ok": False,
             "status": "failed",
@@ -431,6 +443,13 @@ class UXErrorHandler:
             "error_type": type(error).__name__,
             "message": str(error),
             "image_path": image_path,
+            "fallback_options": {
+                "retry_with_different_params": True,
+                "use_original_image": True,
+                "reduce_image_quality": True
+            },
+            "can_retry": True,
+            "suggested_action": suggested_action
         }
 
     def handle_tooltip_error(self, error: BaseException, element_id: str) -> Dict[str, Any]:
@@ -443,6 +462,27 @@ class UXErrorHandler:
             "element_id": element_id,
             "error_type": type(error).__name__,
             "message": str(error),
+            "should_hide_tooltip": True,
+            "fallback_content": "Please contact support if you need help with this feature."
+        }
+    
+    def handle_prerequisite_error(self, error: BaseException, checker_name: str, required: bool = True) -> Dict[str, Any]:
+        """Return a normalized payload for prerequisite errors."""
+        record_ux_error("prerequisite", {"exc": type(error).__name__, "checker_name": checker_name})
+        return {
+            "ok": False,
+            "status": "failed",
+            "context": "prerequisite",
+            "error_type": type(error).__name__,
+            "message": str(error),
+            "checker_name": checker_name,
+            "blocks_operation": required,
+            "can_continue_with_fallback": not required,
+            "resolution_options": {
+                "estimated_time": "1-5 minutes",
+                "requires_admin": False,
+                "can_retry": True
+            }
         }
 
     def get_processing_stats(self) -> Dict[str, Any]:
@@ -476,13 +516,47 @@ def with_prerequisite_error_handling(
                 )
 
                 is_required = True if required is None else bool(required)
+                # Erstelle detaillierte Fehlermeldung basierend auf Exception-Typ
+                error_msg = str(e).lower()
+                details = str(e)
+                resolution_steps = []
+                
+                if "timeout" in error_msg or "connection timeout" in error_msg or "timeout expired" in error_msg:
+                    details = f"connection timed out: {str(e)}"
+                    resolution_steps = [
+                        "Check if PostgreSQL is running and accessible",
+                        "Verify network connectivity to database server",
+                        "Check firewall settings and port accessibility"
+                    ]
+                elif any(term in error_msg for term in ["authentication", "password", "role", "permission", "auth"]):
+                    details = f"authentication failed: {str(e)}"
+                    resolution_steps = [
+                        "Verify username and password credentials",
+                        "Check database user permissions and roles",
+                        "Ensure database user exists and is active"
+                    ]
+                elif any(term in error_msg for term in ["connection", "host", "port", "refused", "unreachable", "failed"]):
+                    details = f"connection failed: {str(e)}"
+                    resolution_steps = [
+                        "Check database server is running",
+                        "Verify host and port configuration",
+                        "Test network connectivity to database"
+                    ]
+                else:
+                    details = f"Database check failed: {str(e)}"
+                    resolution_steps = [
+                        "Review error details for specific issue",
+                        "Check database server logs",
+                        "Verify configuration settings"
+                    ]
+                
                 return PrerequisiteResult(
                     name=checker_name or getattr(args[0], "name", "prerequisite"),
                     status=PrerequisiteStatus.FAILED if is_required else PrerequisiteStatus.WARNING,
                     # ganz wichtig: Originaltext durchreichen (Tests suchen Substrings)
                     message=str(e),
-                    details="",
-                    resolution_steps=[],
+                    details=details,
+                    resolution_steps=resolution_steps,
                     check_time=0.0,
                     prerequisite_type=PrerequisiteType.REQUIRED if is_required else PrerequisiteType.RECOMMENDED,
                 )
@@ -529,6 +603,7 @@ def safe_tooltip_execution(
                     "message": payload.get("message", "An unexpected error occurred."),
                     "detail": payload.get("detail", str(exc)),
                     "element_id": element_id,
+                    "fallback_content": "Please contact support if you need help with this feature."
                 }
         return _inner
 

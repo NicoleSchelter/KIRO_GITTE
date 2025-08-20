@@ -155,7 +155,7 @@ class TooltipRenderer:
     
     def render_html(self, content: TooltipContent, element_id: str) -> str:
         """
-        Render tooltip as HTML.
+        Render tooltip as HTML with enhanced accessibility and mobile support.
         
         Args:
             content: Tooltip content
@@ -171,23 +171,42 @@ class TooltipRenderer:
         css_classes = [
             "gitte-tooltip",
             f"tooltip-{content.theme.value}",
-            f"tooltip-{content.position.value}"
+            f"tooltip-{content.position.value}",
+            "tooltip-accessible"
         ]
         
-        # Accessibility attributes
+        # Enhanced accessibility attributes
         aria_attrs = ""
         if self.config.accessibility_enabled:
             aria_label = content.accessibility_label or content.title
-            aria_attrs = f'role="tooltip" aria-label="{aria_label}" tabindex="0"'
+            aria_attrs = f'role="tooltip" aria-describedby="tooltip-{element_id}" aria-label="{aria_label}" tabindex="0" data-tooltip-id="{element_id}"'
         
-        # Build tooltip HTML
+        # Mobile touch events and keyboard support
+        event_handlers = """
+            onkeydown="if(event.key==='Escape') this.style.display='none'"
+            ontouchstart="this.classList.add('tooltip-touch-active')"
+            ontouchend="this.classList.remove('tooltip-touch-active')"
+            onfocus="this.style.display='block'"
+            onblur="setTimeout(() => this.style.display='none', 200)"
+        """
+        
+        # Build tooltip HTML with enhanced features
         html = f"""
         <div class="{' '.join(css_classes)}" 
              id="tooltip-{element_id}"
              {aria_attrs}
-             style="max-width: {content.max_width}px;">
+             {event_handlers}
+             style="max-width: {content.max_width}px;"
+             data-show-delay="{content.show_delay_ms}"
+             data-hide-delay="{content.hide_delay_ms}">
             <div class="tooltip-header">
                 <span class="tooltip-title">{content.title}</span>
+                <button class="tooltip-close" 
+                        aria-label="Close tooltip" 
+                        onclick="this.parentElement.parentElement.style.display='none'"
+                        onkeydown="if(event.key==='Enter' || event.key===' ') this.click()">
+                    ×
+                </button>
             </div>
             <div class="tooltip-body">
                 <p class="tooltip-description">{content.description}</p>
@@ -326,19 +345,195 @@ class TooltipSystem:
         return self.renderer.render_streamlit_help(content)
     
     def inject_css(self):
-        """Inject CSS styles for tooltips into Streamlit."""
+        """Inject tooltip CSS and JavaScript into Streamlit."""
         if not self.config.css_injection_enabled or self._css_injected:
             return
         
+        # Inject CSS
         css = self._generate_tooltip_css()
         st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+        
+        # Inject JavaScript for enhanced functionality
+        js_code = self._generate_tooltip_javascript()
+        st.markdown(f"<script>{js_code}</script>", unsafe_allow_html=True)
+        
         self._css_injected = True
-        logger.debug("Tooltip CSS injected into Streamlit")
+        logger.debug("Tooltip CSS and JavaScript injected into Streamlit")
+    
+    def _generate_tooltip_javascript(self) -> str:
+        """Generate JavaScript for enhanced tooltip functionality."""
+        return """
+        // GITTE Tooltip JavaScript - Enhanced Performance & Accessibility
+        (function() {
+            'use strict';
+            
+            // Debounce function for performance
+            function debounce(func, wait) {
+                let timeout;
+                return function executedFunction(...args) {
+                    const later = () => {
+                        clearTimeout(timeout);
+                        func(...args);
+                    };
+                    clearTimeout(timeout);
+                    timeout = setTimeout(later, wait);
+                };
+            }
+            
+            // Throttle function for performance
+            function throttle(func, limit) {
+                let inThrottle;
+                return function() {
+                    const args = arguments;
+                    const context = this;
+                    if (!inThrottle) {
+                        func.apply(context, args);
+                        inThrottle = true;
+                        setTimeout(() => inThrottle = false, limit);
+                    }
+                }
+            }
+            
+            // Tooltip manager
+            const tooltipManager = {
+                activeTooltip: null,
+                showTimeout: null,
+                hideTimeout: null,
+                
+                show: function(element, tooltipId, delay = 500) {
+                    this.hide();
+                    
+                    this.showTimeout = setTimeout(() => {
+                        const tooltip = document.getElementById(tooltipId);
+                        if (tooltip) {
+                            tooltip.style.display = 'block';
+                            tooltip.style.opacity = '0';
+                            
+                            // Position tooltip
+                            this.positionTooltip(element, tooltip);
+                            
+                            // Animate in
+                            setTimeout(() => {
+                                tooltip.style.opacity = '1';
+                            }, 10);
+                            
+                            this.activeTooltip = tooltip;
+                        }
+                    }, delay);
+                },
+                
+                hide: function(delay = 200) {
+                    if (this.showTimeout) {
+                        clearTimeout(this.showTimeout);
+                        this.showTimeout = null;
+                    }
+                    
+                    if (this.activeTooltip) {
+                        this.hideTimeout = setTimeout(() => {
+                            if (this.activeTooltip) {
+                                this.activeTooltip.style.opacity = '0';
+                                setTimeout(() => {
+                                    if (this.activeTooltip) {
+                                        this.activeTooltip.style.display = 'none';
+                                        this.activeTooltip = null;
+                                    }
+                                }, 200);
+                            }
+                        }, delay);
+                    }
+                },
+                
+                positionTooltip: function(element, tooltip) {
+                    const rect = element.getBoundingClientRect();
+                    const tooltipRect = tooltip.getBoundingClientRect();
+                    
+                    // Default to bottom positioning
+                    let top = rect.bottom + 8;
+                    let left = rect.left + (rect.width / 2) - (tooltipRect.width / 2);
+                    
+                    // Check if tooltip goes off screen
+                    if (top + tooltipRect.height > window.innerHeight) {
+                        top = rect.top - tooltipRect.height - 8;
+                    }
+                    if (left < 0) {
+                        left = 8;
+                    } else if (left + tooltipRect.width > window.innerWidth) {
+                        left = window.innerWidth - tooltipRect.width - 8;
+                    }
+                    
+                    tooltip.style.top = top + 'px';
+                    tooltip.style.left = left + 'px';
+                    tooltip.style.position = 'fixed';
+                }
+            };
+            
+            // Event listeners for tooltip triggers
+            document.addEventListener('DOMContentLoaded', function() {
+                // Handle tooltip triggers
+                document.addEventListener('mouseenter', function(e) {
+                    const tooltipId = e.target.getAttribute('data-tooltip');
+                    if (tooltipId) {
+                        tooltipManager.show(e.target, tooltipId, 500);
+                    }
+                }, { passive: true });
+                
+                document.addEventListener('mouseleave', function(e) {
+                    const tooltipId = e.target.getAttribute('tooltip');
+                    if (tooltipId) {
+                        tooltipManager.hide(200);
+                    }
+                }, { passive: true });
+                
+                // Handle focus events for accessibility
+                document.addEventListener('focusin', function(e) {
+                    const tooltipId = e.target.getAttribute('data-tooltip');
+                    if (tooltipId) {
+                        tooltipManager.show(e.target, tooltipId, 100);
+                    }
+                }, { passive: true });
+                
+                document.addEventListener('focusout', function(e) {
+                    const tooltipId = e.target.getAttribute('data-tooltip');
+                    if (tooltipId) {
+                        tooltipManager.hide(200);
+                    }
+                }, { passive: true });
+                
+                // Handle escape key
+                document.addEventListener('keydown', function(e) {
+                    if (e.key === 'Escape') {
+                        tooltipManager.hide(0);
+                    }
+                }, { passive: true });
+                
+                // Handle touch events for mobile
+                document.addEventListener('touchstart', function(e) {
+                    const tooltipId = e.target.getAttribute('data-tooltip');
+                    if (tooltipId) {
+                        tooltipManager.show(e.target, tooltipId, 0);
+                    }
+                }, { passive: true });
+                
+                // Handle window resize for repositioning
+                window.addEventListener('resize', throttle(function() {
+                    if (tooltipManager.activeTooltip) {
+                        const trigger = document.querySelector('[data-tooltip="' + tooltipManager.activeTooltip.id.replace('tooltip-', '') + '"]');
+                        if (trigger) {
+                            tooltipManager.positionTooltip(trigger, tooltipManager.activeTooltip);
+                        }
+                    }
+                }, 100), { passive: true });
+            });
+            
+            // Expose tooltip manager globally
+            window.gitteTooltipManager = tooltipManager;
+        })();
+        """
     
     def _generate_tooltip_css(self) -> str:
-        """Generate CSS styles for tooltips."""
+        """Generate enhanced CSS styles for tooltips with accessibility and mobile support."""
         return """
-        /* GITTE Tooltip Styles */
+        /* GITTE Tooltip Styles - Enhanced Accessibility & Mobile */
         .gitte-tooltip {
             background: #333;
             color: white;
@@ -350,8 +545,45 @@ class TooltipSystem:
             z-index: 1000;
             position: relative;
             border: 1px solid #555;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            max-width: 300px;
+            word-wrap: break-word;
         }
         
+        /* Close button styling */
+        .tooltip-close {
+            background: none;
+            border: none;
+            color: #ccc;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            padding: 0;
+            margin-left: 8px;
+            float: right;
+            line-height: 1;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s ease;
+        }
+        
+        .tooltip-close:hover,
+        .tooltip-close:focus {
+            background-color: rgba(255,255,255,0.1);
+            color: white;
+            outline: 2px solid #4CAF50;
+            outline-offset: 2px;
+        }
+        
+        .tooltip-close:active {
+            background-color: rgba(255,255,255,0.2);
+        }
+        
+        /* Theme variations */
         .gitte-tooltip.tooltip-dark {
             background: #1a1a1a;
             color: #f0f0f0;
@@ -383,13 +615,19 @@ class TooltipSystem:
             border-color: #d32f2f;
         }
         
+        /* Header and content */
         .tooltip-header {
             margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
         }
         
         .tooltip-title {
             font-weight: 600;
             font-size: 15px;
+            flex: 1;
+            margin-right: 8px;
         }
         
         .tooltip-body {
@@ -422,17 +660,54 @@ class TooltipSystem:
             text-decoration: none;
             font-size: 13px;
             font-weight: 500;
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: background-color 0.2s ease;
         }
         
-        .help-link:hover {
+        .help-link:hover,
+        .help-link:focus {
             color: #A5D6A7;
             text-decoration: underline;
+            background-color: rgba(129, 199, 132, 0.1);
+            outline: 2px solid #4CAF50;
+            outline-offset: 2px;
         }
         
-        /* Accessibility improvements */
+        /* Enhanced accessibility */
         .gitte-tooltip:focus {
             outline: 2px solid #4CAF50;
             outline-offset: 2px;
+        }
+        
+        .gitte-tooltip.tooltip-accessible {
+            /* High contrast mode support */
+            filter: contrast(1.1);
+        }
+        
+        /* Mobile touch support */
+        .gitte-tooltip.tooltip-touch-active {
+            transform: scale(1.02);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.2);
+        }
+        
+        /* Reduced motion support */
+        @media (prefers-reduced-motion: reduce) {
+            .gitte-tooltip {
+                transition: none;
+            }
+            .gitte-tooltip.tooltip-touch-active {
+                transform: none;
+            }
+        }
+        
+        /* High contrast mode */
+        @media (prefers-contrast: high) {
+            .gitte-tooltip {
+                border-width: 2px;
+                box-shadow: 0 0 0 2px #000;
+            }
         }
         
         /* Responsive design */
@@ -440,7 +715,25 @@ class TooltipSystem:
             .gitte-tooltip {
                 max-width: 280px !important;
                 font-size: 13px;
+                padding: 10px;
             }
+            
+            .tooltip-close {
+                width: 24px;
+                height: 24px;
+                font-size: 20px;
+            }
+        }
+        
+        /* RTL support */
+        .gitte-tooltip[dir="rtl"] {
+            text-align: right;
+        }
+        
+        .gitte-tooltip[dir="rtl"] .tooltip-close {
+            float: left;
+            margin-left: 0;
+            margin-right: 8px;
         }
         """
     

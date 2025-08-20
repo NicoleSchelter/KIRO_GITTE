@@ -227,6 +227,34 @@ class TooltipContentManager:
                 action_text="Complete the form fields above to enable preview generation",
                 theme=TooltipTheme.SUCCESS,
                 accessibility_label="Preview generation button"
+            ),
+            
+            "age_range_select": TooltipContent(
+                title="Age Range",
+                description="Select the approximate age range for your learning assistant's appearance.",
+                action_text="Choose an age range that fits your learning preferences",
+                accessibility_label="Age range selector for assistant appearance"
+            ),
+            
+            "ethnicity_select": TooltipContent(
+                title="Ethnicity",
+                description="Choose the ethnic appearance for your learning assistant. This helps create a more personalized experience.",
+                action_text="Select an ethnicity that represents your preferences",
+                accessibility_label="Ethnicity selector for assistant appearance"
+            ),
+            
+            "clothing_style_select": TooltipContent(
+                title="Clothing Style",
+                description="Select the clothing style for your assistant. Options range from casual to formal professional attire.",
+                action_text="Choose a style that matches your learning environment",
+                accessibility_label="Clothing style selector for assistant appearance"
+            ),
+            
+            "background_style_select": TooltipContent(
+                title="Background Style",
+                description="Choose the background environment for your assistant. Options include office, classroom, library, and more.",
+                action_text="Select a background that fits your learning context",
+                accessibility_label="Background style selector for assistant appearance"
             )
         }
         
@@ -273,6 +301,34 @@ class TooltipContentManager:
                 description="Adjust chat preferences like response length, formality level, and interaction style.",
                 action_text="Click to open chat configuration",
                 accessibility_label="Chat settings button"
+            ),
+            
+            "voice_chat_button": TooltipContent(
+                title="Voice Chat",
+                description="Switch to voice-based interaction with your learning assistant. Speak naturally and receive audio responses.",
+                action_text="Click to enable voice chat mode",
+                accessibility_label="Voice chat toggle button"
+            ),
+            
+            "chat_model_select": TooltipContent(
+                title="AI Model",
+                description="Choose the AI model for your chat interactions. Different models have different capabilities and response styles.",
+                action_text="Select an AI model that fits your learning needs",
+                accessibility_label="AI model selector for chat"
+            ),
+            
+            "response_length_slider": TooltipContent(
+                title="Response Length",
+                description="Adjust how detailed your assistant's responses should be. Shorter for quick answers, longer for comprehensive explanations.",
+                action_text="Drag slider to adjust response detail level",
+                accessibility_label="Response length adjustment slider"
+            ),
+            
+            "formality_level_select": TooltipContent(
+                title="Formality Level",
+                description="Choose how formal or casual your assistant's communication style should be.",
+                action_text="Select from formal, neutral, or casual communication style",
+                accessibility_label="Communication formality selector"
             )
         }
         
@@ -327,6 +383,34 @@ class TooltipContentManager:
                 description="Download the image to your device. The image will be saved in high quality PNG format.",
                 action_text="Click to download image to your device",
                 accessibility_label="Download image button"
+            ),
+            
+            "image_size_select": TooltipContent(
+                title="Image Size",
+                description="Choose the dimensions for your generated image. Larger sizes provide more detail but take longer to generate.",
+                action_text="Select size based on your needs and patience",
+                accessibility_label="Image size selector"
+            ),
+            
+            "aspect_ratio_select": TooltipContent(
+                title="Aspect Ratio",
+                description="Choose the shape of your image. Common ratios include square, portrait, and landscape orientations.",
+                action_text="Select aspect ratio that fits your intended use",
+                accessibility_label="Image aspect ratio selector"
+            ),
+            
+            "seed_input": TooltipContent(
+                title="Seed Value",
+                description="Set a specific seed value for reproducible image generation. Same seed + prompt produces similar results.",
+                action_text="Leave empty for random generation, or set for consistent results",
+                accessibility_label="Image generation seed input"
+            ),
+            
+            "negative_prompt_input": TooltipContent(
+                title="Negative Prompt",
+                description="Specify what you don't want to see in the image. This helps avoid unwanted elements.",
+                action_text="Use terms like 'blurry', 'low quality', 'text' to exclude elements",
+                accessibility_label="Negative prompt input for image generation"
             )
         }
         
@@ -379,6 +463,7 @@ class TooltipContentManager:
             "language_select": TooltipContent(
                 title="Language",
                 description="Change the interface language. Your learning assistant will also respond in the selected language.",
+                action_text="Select your preferred language from the dropdown",
                 accessibility_label="Language selector"
             ),
             
@@ -387,6 +472,28 @@ class TooltipContentManager:
                 description="Download your data in a portable format for backup or transfer purposes",
                 action_text="Click to generate and download your data export",
                 accessibility_label="Data export button"
+            ),
+            
+            "search_input": TooltipContent(
+                title="Search",
+                description="Search through GITTE features, help content, and your learning materials.",
+                action_text="Type keywords to find relevant information",
+                accessibility_label="Search input field"
+            ),
+            
+            "notifications_button": TooltipContent(
+                title="Notifications",
+                description="View system notifications, updates, and important messages about your account.",
+                action_text="Click to view notification center",
+                accessibility_label="Notifications button"
+            ),
+            
+            "feedback_button": TooltipContent(
+                title="Feedback",
+                description="Share your thoughts, report issues, or suggest improvements for GITTE.",
+                action_text="Click to submit feedback or report issues",
+                help_link="/feedback",
+                accessibility_label="Feedback button"
             )
         }
         
@@ -430,6 +537,38 @@ class TooltipContentManager:
                 action_text="Click to view system logs and diagnostics",
                 theme=TooltipTheme.WARNING,
                 accessibility_label="System logs button"
+            ),
+            
+            "system_health_button": TooltipContent(
+                title="System Health",
+                description="Monitor system performance, resource usage, and overall health status.",
+                action_text="Click to view system health dashboard",
+                theme=TooltipTheme.WARNING,
+                accessibility_label="System health monitoring button"
+            ),
+            
+            "feature_flags_button": TooltipContent(
+                title="Feature Flags",
+                description="Enable or disable system features for testing and gradual rollout.",
+                action_text="Click to manage feature flags (admin only)",
+                theme=TooltipTheme.WARNING,
+                accessibility_label="Feature flag management button"
+            ),
+            
+            "audit_logs_button": TooltipContent(
+                title="Audit Logs",
+                description="View detailed audit trail of system activities and user actions for compliance.",
+                action_text="Click to view audit logs",
+                theme=TooltipTheme.ERROR,
+                accessibility_label="Audit logs button - compliance tracking"
+            ),
+            
+            "maintenance_mode_button": TooltipContent(
+                title="Maintenance Mode",
+                description="Enable maintenance mode to restrict user access during system updates.",
+                action_text="Click to toggle maintenance mode (admin only)",
+                theme=TooltipTheme.ERROR,
+                accessibility_label="Maintenance mode toggle button"
             )
         }
         
@@ -470,7 +609,8 @@ class TooltipContentManager:
         # Form validation processor for input fields
         form_input_elements = [
             "username_input", "email_input", "password_input", "confirm_password_input",
-            "character_name_input", "personality_traits_input", "image_prompt_input"
+            "character_name_input", "personality_traits_input", "image_prompt_input",
+            "search_input", "seed_input", "negative_prompt_input"
         ]
         
         for element_id in form_input_elements:
@@ -479,7 +619,8 @@ class TooltipContentManager:
         # Disabled element processor for buttons
         button_elements = [
             "register_submit_button", "generate_preview_button", "send_message_button",
-            "generate_image_button", "save_image_button"
+            "generate_image_button", "save_image_button", "regenerate_image_button",
+            "download_image_button", "export_button", "backup_button"
         ]
         
         for element_id in button_elements:
@@ -487,11 +628,20 @@ class TooltipContentManager:
         
         # Custom processor for consent checkboxes
         consent_elements = [
-            "data_processing_consent", "llm_interaction_consent", "image_generation_consent"
+            "data_processing_consent", "llm_interaction_consent", "image_generation_consent",
+            "analytics_consent"
         ]
         
         for element_id in consent_elements:
             self.tooltip_system.register_context_processor(element_id, self._consent_processor)
+        
+        # Slider processor for range inputs
+        slider_elements = [
+            "response_length_slider"
+        ]
+        
+        for element_id in slider_elements:
+            self.tooltip_system.register_context_processor(element_id, self._slider_processor)
         
         logger.info("Registered context processors for dynamic tooltip behavior")
     
@@ -527,6 +677,42 @@ class TooltipContentManager:
                 action_text=f"Check to enable: {feature_list}",
                 theme=TooltipTheme.WARNING,
                 accessibility_label=f"{base_tooltip.accessibility_label} - not granted, features disabled"
+            )
+        
+        return modified
+    
+    def _slider_processor(self, base_tooltip: TooltipContent, context: Dict[str, Any]) -> TooltipContent:
+        """
+        Context processor for slider inputs.
+        
+        Args:
+            base_tooltip: Base tooltip content
+            context: Context containing slider state
+            
+        Returns:
+            Modified tooltip content
+        """
+        current_value = context.get("current_value", None)
+        min_value = context.get("min_value", 0)
+        max_value = context.get("max_value", 100)
+        
+        if current_value is not None:
+            # Add current value to description
+            modified = TooltipContent(
+                title=base_tooltip.title,
+                description=f"{base_tooltip.description} Current value: {current_value}",
+                action_text=f"Drag to adjust between {min_value} and {max_value}",
+                theme=base_tooltip.theme,
+                accessibility_label=f"{base_tooltip.accessibility_label} - current value: {current_value}"
+            )
+        else:
+            # No current value
+            modified = TooltipContent(
+                title=base_tooltip.title,
+                description=base_tooltip.description,
+                action_text=f"Drag to set value between {min_value} and {max_value}",
+                theme=base_tooltip.theme,
+                accessibility_label=base_tooltip.accessibility_label
             )
         
         return modified
