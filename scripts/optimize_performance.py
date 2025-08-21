@@ -165,13 +165,18 @@ def optimize_system():
     # 3. Database optimization (if available)
     print("  🗄️  Optimizing database...")
     try:
-        from config.config import config
-        from sqlalchemy import create_engine
-        
-        engine = create_engine(config.database.dsn)
+        # Always reuse the central database engine from the data layer
+        try:
+            from data.database import setup_database, db_manager  # 'src' is already added to sys.path above
+        except Exception:
+            from src.data.database import setup_database, db_manager  # fallback if path differs
+
+        setup_database()  # ensures env loading, engine with pool_pre_ping, session factory, etc.
+        engine = db_manager.engine
+
         initialize_db_optimizer(engine)
-        
         db_optimizer = DatabaseOptimizationService(engine)
+
         
         # Get table statistics
         table_stats = db_optimizer.get_table_statistics()

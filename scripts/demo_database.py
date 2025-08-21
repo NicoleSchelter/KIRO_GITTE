@@ -11,10 +11,6 @@ from pathlib import Path
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
-
 from src.data.models import Base, ConsentType, UserRole
 from src.data.repositories import (
     ConsentRepository,
@@ -33,22 +29,20 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+# Use the central data layer even for demos (DRY & realistic paths)
+import os
+
 def create_demo_database():
-    """Create an in-memory SQLite database for demonstration."""
-    engine = create_engine(
-        "sqlite:///:memory:",
-        poolclass=StaticPool,
-        connect_args={"check_same_thread": False},
-        echo=False,
-    )
+    """Prepare central DB manager to use in-memory SQLite for this demo."""
+    # Force DSN locally for the demo process only
+    os.environ["POSTGRES_DSN"] = "sqlite:///:memory:"  # central layer will detect SQLite and set StaticPool
+    try:
+        from data.database import setup_database, get_session  # 'src' was appended to sys.path above
+    except Exception:
+        from src.data.database import setup_database, get_session
 
-    # Create all tables
-    Base.metadata.create_all(bind=engine)
-
-    # Create session factory
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-    return SessionLocal
+    setup_database()  # creates tables via Base.metadata.create_all(...)
+    return get_session  # return the context-manager factory
 
 
 def demo_user_operations(session):
@@ -72,7 +66,6 @@ def demo_user_operations(session):
     logger.info(f"Retrieved user by pseudonym: {retrieved_user.pseudonym}")
 
     return user
-
 
 def demo_consent_operations(session, user):
     """Demonstrate consent operations."""
@@ -104,7 +97,6 @@ def demo_consent_operations(session, user):
     # Check consent after withdrawal
     has_consent_after = consent_repo.check_consent(user.id, ConsentType.DATA_PROCESSING)
     logger.info(f"User has consent after withdrawal: {has_consent_after}")
-
 
 def demo_pald_operations(session, user):
     """Demonstrate PALD operations."""
@@ -162,7 +154,6 @@ def demo_pald_operations(session, user):
         f"Retrieved PALD data: learning_style = {retrieved_pald.pald_content['learning_style']}"
     )
 
-
 def main():
     """Run database demonstration."""
     logger.info("GITTE Database Demonstration")
@@ -170,9 +161,9 @@ def main():
 
     try:
         # Create demo database
-        SessionLocal = create_demo_database()
+        get_session = create_demo_database()
 
-        with SessionLocal() as session:
+        with get_session() as session:
             # Demo user operations
             user = demo_user_operations(session)
 

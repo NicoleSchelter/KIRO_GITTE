@@ -14,9 +14,14 @@ from uuid import UUID
 
 import requests
 import sqlalchemy as sa
+# Use NullPool to disable pooling for quick connectivity checks
+from sqlalchemy.pool import NullPool
 
 from config.config import config
-from src.services.consent_service import ConsentService, ConsentType
+# Keep service type, but get the enum from data layer to avoid circular/fragile imports
+from src.services.consent_service import ConsentService
+from src.data.models import ConsentType  # Enum lives in data layer
+
 from src.exceptions import (
     PrerequisiteCheckFailedError,
     RequiredPrerequisiteError,
@@ -55,7 +60,7 @@ class PrerequisiteResult:
     name: str
     status: PrerequisiteStatus
     message: str
-    details: Optional[str] = None
+    details: Optional[Any] = None  # str or dict
     resolution_steps: List[str] = None
     check_time: float = 0.0
     prerequisite_type: PrerequisiteType = PrerequisiteType.REQUIRED
@@ -254,11 +259,24 @@ class DatabaseConnectivityChecker(PrerequisiteChecker):
         
         try:
             # Create engine with timeout and connection pooling disabled for checks
+            # Lightweight, no-pooling engine for a quick health check
             engine = sa.create_engine(
                 self.dsn,
                 connect_args={"connect_timeout": self.timeout},
-                poolclass=None,  # Disable pooling for prerequisite checks
+                poolclass=NullPool,  # Correct way to disable pooling
             )
+
+            # If someone points the DSN to SQLite, avoid Postgres-only queries
+            if self.dsn.startswith("sqlite"):
+                return PrerequisiteResult(
+                    name=self.name,
+                    status=PrerequisiteStatus.WARNING,
+                    message="SQLite DSN detected – skipping PostgreSQL schema checks",
+                    details="Connectivity OK (SQLite). For production use PostgreSQL.",
+                    check_time=time.time() - start_time,
+                    prerequisite_type=self.prerequisite_type,
+                )
+
             
             with engine.connect() as conn:
                 # Check PostgreSQL version
@@ -537,16 +555,14 @@ class SystemHealthChecker(PrerequisiteChecker):
 class ImageIsolationPrereqChecker(PrerequisiteChecker):
     """Image isolation service availability checker."""
     
-    def __init__(self):
-        super().__init__("Image Isolation Service", PrerequisiteType.RECOMMENDED)
-    
     def check(self) -> PrerequisiteResult:
         """Check if image isolation service is available."""
         try:
             from config.config import config
             
+            endpoint = getattr(getattr(config, "image_isolation", None), "endpoint", None)
             # Check if endpoint is configured
-            if not config.image_isolation.endpoint:
+            if not endpoint:
                 return PrerequisiteResult(
                     name=self.name,
                     status=PrerequisiteStatus.FAILED,
@@ -554,9 +570,8 @@ class ImageIsolationPrereqChecker(PrerequisiteChecker):
                     prerequisite_type=self.prerequisite_type,
                     resolution_steps=[
                         "Set ISOLATION_ENDPOINT environment variable",
-                        "Configure endpoint in config.image_isolation.endpoint",
-                        "Ensure endpoint points to valid service"
-                    ]
+                        "Add image_isolation.endpoint in config",
+                    ],
                 )
             
             # Try to ping the endpoint
@@ -564,7 +579,7 @@ class ImageIsolationPrereqChecker(PrerequisiteChecker):
             
             # Use HEAD request for fast health check
             response = requests.head(
-                config.image_isolation.endpoint,
+                endpoint,
                 timeout=5,
                 allow_redirects=False
             )
@@ -576,7 +591,7 @@ class ImageIsolationPrereqChecker(PrerequisiteChecker):
                     message="Image isolation service is available",
                     prerequisite_type=self.prerequisite_type,
                     details={
-                        "endpoint": config.image_isolation.endpoint,
+                        "endpoint": endpoint,
                         "response_time": response.elapsed.total_seconds()
                     }
                 )
@@ -649,6 +664,10 @@ class ImageIsolationPrereqChecker(PrerequisiteChecker):
     @property
     def prerequisite_type(self) -> PrerequisiteType:
         return PrerequisiteType.RECOMMENDED
+
+    @property
+    def name(self) -> str:
+        return "Image Isolation Service"
 
 
 class PrerequisiteValidationService:

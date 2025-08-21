@@ -18,6 +18,12 @@ from .models import Base
 
 logger = logging.getLogger(__name__)
 
+# after logger = logging.getLogger(__name__)
+import re
+def _mask_dsn(dsn: str) -> str:
+    # mask password in URLs like postgresql://user:pass@host/db
+    return re.sub(r'(://[^:]+:)([^@]+)(@)', r'\1****\3', dsn)
+
 
 class DatabaseManager:
     """Database connection and session manager."""
@@ -52,6 +58,7 @@ class DatabaseManager:
                 engine_kwargs.pop("max_overflow", None)
 
             self._engine = create_engine(config.database.dsn, **engine_kwargs)
+            logger.info("Database DSN in use: %s", _mask_dsn(config.database.dsn))
 
             # Add connection event listeners
             self._setup_connection_events()

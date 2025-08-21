@@ -136,50 +136,47 @@ class BackgroundRemovalModel(LazyResource):
 
 
 class DatabaseConnectionPool(LazyResource):
-    """Lazy-loaded database connection pool."""
-    
-    def __init__(self, dsn: str, pool_size: int = 5):
+    """Alias to the central database engine.
+    NOTE: Do not create a private engine here – we must use the global one to stay DRY and stable.
+    """
+    def __init__(self, dsn: str | None = None, pool_size: int = 5):
+        # kept for backward-compatibility (ignored)
         self.dsn = dsn
         self.pool_size = pool_size
         self._engine = None
-    
+
     @property
     def name(self) -> str:
         return "database_connection_pool"
-    
+
     @property
     def is_expensive(self) -> bool:
-        return False  # Database connections are not as expensive as ML models
-    
+        return False  # accessing the central engine is cheap
+
     def load(self) -> Any:
-        """Create database connection pool."""
+        """Return the central SQLAlchemy engine provided by data layer."""
         try:
-            from sqlalchemy import create_engine
-            
-            self._engine = create_engine(
-                self.dsn,
-                pool_size=self.pool_size,
-                pool_pre_ping=True,
-                pool_recycle=3600  # Recycle connections every hour
-            )
-            
-            logger.info(f"Database connection pool created with {self.pool_size} connections")
+            # Be robust to different import styles during scripts/tests
+            try:
+                from src.data.database import setup_database, db_manager
+            except Exception:
+                from data.database import setup_database, db_manager  # when 'src' is on sys.path
+
+            # Ensure central DB is initialized (loads .env, sets pool_pre_ping, etc.)
+            setup_database()
+            self._engine = db_manager.engine
+            logger.info("Using central database engine (no private pool created)")
             return self._engine
-            
+
         except Exception as e:
-            logger.error(f"Failed to create database connection pool: {e}")
+            logger.error(f"Failed to obtain central DB engine: {e}")
             raise
-    
+
     def unload(self):
-        """Close database connection pool."""
-        if self._engine:
-            self._engine.dispose()
-            self._engine = None
-            logger.info("Database connection pool closed")
-    
-    def get_engine(self):
-        """Get the SQLAlchemy engine instance."""
-        return self._engine
+        """Do NOT dispose the central engine from here."""
+        self._engine = None
+        logger.info("DatabaseConnectionPool alias released (central engine remains alive)")
+
 
 
 class LazyLoadingService:

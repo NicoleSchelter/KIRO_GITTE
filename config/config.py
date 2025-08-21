@@ -7,6 +7,12 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
+# Load .env early so all os.getenv calls see variables
+try:
+    from dotenv import load_dotenv  # type: ignore
+    load_dotenv()
+except Exception:
+    pass  # safe no-op if python-dotenv is missing
 
 @dataclass
 class DatabaseConfig:
@@ -18,9 +24,11 @@ class DatabaseConfig:
     echo: bool = False
 
     def __post_init__(self):
-        # Override with environment variable if provided
-        if env_dsn := os.getenv("POSTGRES_DSN"):
+        # Prefer explicit DSN from env; support both POSTGRES_DSN and DATABASE_URL
+        env_dsn = os.getenv("POSTGRES_DSN") or os.getenv("DATABASE_URL")
+        if env_dsn:
             self.dsn = env_dsn
+
 
 
 @dataclass
@@ -191,12 +199,21 @@ class PrerequisiteConfig:
     fail_on_required: bool = True
     warn_on_recommended: bool = True
     ignore_optional: bool = False
+    db_connection_timeout: int = 5
+    enable_image_isolation_check: bool = False
+    isolation_endpoint: str | None = None
 
     def __post_init__(self):
         if env_enabled := os.getenv("PREREQUISITE_CHECKS_ENABLED"):
             self.enabled = env_enabled.lower() == "true"
         if env_cache_ttl := os.getenv("PREREQUISITE_CACHE_TTL"):
             self.cache_ttl_seconds = int(env_cache_ttl)
+        if env_db_to := os.getenv("DB_CONNECTION_TIMEOUT"):
+            self.db_connection_timeout = int(env_db_to)
+        if env_iso := os.getenv("ENABLE_IMAGE_ISOLATION_CHECK"):
+            self.enable_image_isolation_check = env_iso.lower() == "true"
+        if env_iso_ep := os.getenv("ISOLATION_ENDPOINT"):
+            self.isolation_endpoint = env_iso_ep
 
 
 @dataclass
@@ -312,7 +329,10 @@ def initialize_config() -> Config:
 
     # Apply environment-specific overrides
     try:
-        from .environments import environment_manager
+        try:
+            from .environments import environment_manager  # package import
+        except ImportError:
+            from environments import environment_manager   # top-level fallback
 
         environment = os.getenv("ENVIRONMENT", "development")
         config_with_env = environment_manager.apply_environment(base_config, environment)

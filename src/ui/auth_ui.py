@@ -6,7 +6,7 @@ Provides Streamlit components for user login and registration.
 import logging
 from typing import Any
 from uuid import UUID
-
+import regex as re
 import streamlit as st
 
 from config.config import get_text
@@ -32,6 +32,12 @@ from src.ui.tooltip_integration import (
 
 logger = logging.getLogger(__name__)
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    filename="gitte.log",  # Logdatei im aktuellen Verzeichnis
+    filemode="a"
+)
 
 class AuthenticationUI:
     """UI components for user authentication."""
@@ -254,34 +260,48 @@ class AuthenticationUI:
                 "I accept the Terms of Service and Privacy Policy",
                 "terms_checkbox"
             )
+            def password_valid(password: str) -> bool:
+                return (
+                    bool(password)
+                    and len(password) >= 8
+                    and re.search(r"[A-Za-z]", password)
+                    and re.search(r"\d", password)
+                )
+            # Konfigurierbare Bedingungen für die Registrierung
+            registration_requirements = [
+                {
+                    "label": "Username must be at least 3 characters",
+                    "fulfilled": bool(username) and len(username) >= 3,
+                },
+                {
+                    "label": "Password must be at least 8 characters, contain at least one letter and one number",
+                    "fulfilled": password_valid(password),
+                },
+                {
+                    "label": "Passwords must match",
+                    "fulfilled": bool(password) and bool(confirm_password) and password == confirm_password,
+                },
+                {
+                    "label": "You must accept the Terms of Service and Privacy Policy",
+                    "fulfilled": bool(terms_accepted),
+                },
+            ]
+
+            st.markdown("**Folgende Bedingungen müssen erfüllt sein, um ein Konto zu erstellen:**")
+            for req in registration_requirements:
+                color = "green" if req["fulfilled"] else "red"
+                symbol = "✅" if req["fulfilled"] else "❌"
+                st.markdown(f"<span style='color:{color}'>{symbol} {req['label']}</span>", unsafe_allow_html=True)
 
             col1, col2 = st.columns(2)
 
             with col1:
-                # Validate form
-                form_valid = (
-                    username and len(username) >= 3 and
-                    password and len(password) >= 8 and
-                    confirm_password and password == confirm_password and
-                    terms_accepted
-                )
-                
-                validation_errors = []
-                if username and len(username) < 3:
-                    validation_errors.append("Username too short")
-                if password and len(password) < 8:
-                    validation_errors.append("Password too short")
-                if confirm_password and password != confirm_password:
-                    validation_errors.append("Passwords don't match")
-                if not terms_accepted:
-                    validation_errors.append("Must accept terms")
-
+                # Button immer aktiv!
                 register_submitted = form_submit_button(
                     "Create Account",
                     "register_submit_button",
-                    form_valid=form_valid,
-                    validation_errors=validation_errors,
-                    type="primary",  # erlaubt; wir verhindern Doppelsendung intern
+                    form_valid=True,  # Button immer aktiv
+                    type="primary",
                 )
 
             with col2:
@@ -291,25 +311,25 @@ class AuthenticationUI:
                     st.rerun()
 
         if register_submitted:
-            # Validation
+            # Validation nach Klick!
             if not username or not password or not confirm_password:
-                st.error("Please fill in all fields.")
+                st.error("Bitte fülle alle Felder aus.")
                 return False
 
             if len(username) < 3:
-                st.error("Username must be at least 3 characters long.")
+                st.error("Username muss mindestens 3 Zeichen lang sein.")
                 return False
 
             if len(password) < 8:
-                st.error("Password must be at least 8 characters long.")
+                st.error("Passwort muss mindestens 8 Zeichen lang sein.")
                 return False
 
             if password != confirm_password:
-                st.error("Passwords do not match.")
+                st.error("Passwörter stimmen nicht überein.")
                 return False
 
             if not terms_accepted:
-                st.error("You must accept the terms to create an account.")
+                st.error("Du musst die Bedingungen akzeptieren, um ein Konto zu erstellen.")
                 return False
 
             try:
@@ -328,11 +348,11 @@ class AuthenticationUI:
                 return True
 
             except UserAlreadyExistsError:
-                st.error("Username already exists. Please choose a different username.")
+                st.error("Username existiert bereits. Bitte wähle einen anderen.")
             except AuthenticationError as e:
-                st.error(f"Registration failed: {str(e)}")
+                st.error(f"Registrierung fehlgeschlagen: {str(e)}")
             except Exception as e:
-                logger.error(f"Unexpected registration error: {e}")
+                logger.error(f"Unerwarteter Fehler bei der Registrierung: {e}")
                 st.error(get_text("error_generic"))
 
         return False
