@@ -9,6 +9,11 @@ from uuid import UUID
 import time
 
 import streamlit as st
+try:
+    # Streamlit >= 1.27 uses this exception to control reruns
+    from streamlit.runtime.scriptrunner import RerunException
+except Exception:
+    RerunException = RuntimeError  # Fallback to a generic type if module path changes
 
 from src.logic.onboarding import OnboardingStep, get_onboarding_logic
 from src.services.consent_service import get_consent_service
@@ -16,6 +21,7 @@ from src.ui.chat_ui import render_chat_interface, render_embodiment_design_chat
 from src.ui.consent_ui import render_onboarding_consent
 from src.ui.image_ui import render_image_generation_interface
 from src.ui.survey_ui import render_personalization_survey
+from src.ui.tooltip_integration import form_submit_button
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +78,9 @@ class OnboardingUI:
 
             return False
 
+        except RerunException:
+            # Very important: allow Streamlit to perform a rerun without treating it as an error.
+            raise
         except Exception as e:
             logger.error(f"Error rendering onboarding flow for user {user_id}: {e}")
             st.error("⚠️ Onboarding flow error. Please refresh the page.")
@@ -112,6 +121,9 @@ class OnboardingUI:
 
             return False
 
+        except RerunException:
+            # Let Streamlit rerun happen naturally.
+            raise
         except Exception as e:
             logger.error(f"Error handling step completion: {e}")
             st.error("Error advancing to next step. Please try again.")
@@ -393,10 +405,10 @@ class OnboardingUI:
             col1, col2 = st.columns(2)
 
             with col1:
-                feedback_submitted = st.form_submit_button("Submit Feedback", type="primary")
+                feedback_submitted = form_submit_button("Submit Feedback", type="primary")
 
             with col2:
-                skip_feedback = st.form_submit_button("Skip Feedback")
+                skip_feedback = form_submit_button("Skip Feedback")
 
         if feedback_submitted or skip_feedback:
             feedback_data = {

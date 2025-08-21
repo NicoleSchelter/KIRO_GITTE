@@ -102,13 +102,13 @@ class AuthenticationUI:
             col1, col2 = st.columns(2)
 
             with col1:
-                login_submitted = st.form_submit_button(
+                login_submitted = form_submit_button(
                     "🔑 Sign In", 
                     type="primary"
                 )
 
             with col2:
-                register_submitted = st.form_submit_button("👤 New User? Register")
+                register_submitted = form_submit_button("👤 New User? Register")
                 
             # Handle form submissions
             if register_submitted:
@@ -299,13 +299,13 @@ class AuthenticationUI:
                 # Button immer aktiv!
                 register_submitted = form_submit_button(
                     "Create Account",
-                    "register_submit_button",
+                    key="register_submit_button",
                     form_valid=True,  # Button immer aktiv
                     type="primary",
                 )
 
             with col2:
-                if st.form_submit_button("Back to Login"):
+                if form_submit_button("Back to Login"):
                     if "show_registration" in st.session_state:
                         del st.session_state.show_registration
                     st.rerun()
@@ -335,16 +335,39 @@ class AuthenticationUI:
             try:
                 user_data = UserCreate(username=username, password=password, role=UserRole(role))
 
-                self.auth_logic.register_user(user_data)
+                # perform registration (raises on duplicate etc.)
+                user = self.auth_logic.register_user(user_data)
 
+                # Success messages (kept for UX)
                 st.success(get_text("success_registration"))
                 st.info("You can now log in with your new account.")
 
-                # Clear registration form
-                if "show_registration" in st.session_state:
-                    del st.session_state.show_registration
+                # 👉 leave registration screen and automatically authenticate user
+                st.session_state["show_registration"] = False
+                
+                # Auto-authenticate the newly registered user for better UX
+                try:
+                    # Create a session for the new user
+                    session_info = self.auth_logic.login_user(UserLogin(username=username, password=password))
+                    
+                    # Set authentication state
+                    st.session_state["authenticated"] = True
+                    st.session_state["user_id"] = session_info["user_id"]
+                    st.session_state["username"] = username
+                    st.session_state["user_role"] = user.role.value
+                    st.session_state["session_id"] = session_info.get("session_id")
+                    
+                    logger.info(f"User registered and auto-authenticated successfully: {username}")
+                    st.info("You have been automatically logged in!")
+                    
+                except Exception as login_error:
+                    logger.warning(f"Auto-login after registration failed for {username}: {login_error}")
+                    logger.info(f"User registered successfully: {username}")
 
-                logger.info(f"User registered successfully: {username}")
+                # Force immediate UI refresh so we're not stuck on the form
+                st.rerun()
+
+                # Fallback (usually not reached because st.rerun raises)
                 return True
 
             except UserAlreadyExistsError:

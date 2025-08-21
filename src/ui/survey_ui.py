@@ -13,6 +13,7 @@ from config.config import get_text
 from src.data.database import get_session
 from src.data.schemas import PALDDataCreate
 from src.logic.pald import PALDManager
+from src.ui.tooltip_integration import form_submit_button
 
 logger = logging.getLogger(__name__)
 
@@ -187,10 +188,10 @@ class SurveyUI:
             col1, col2 = st.columns(2)
 
             with col1:
-                survey_submitted = st.form_submit_button("Complete Survey", type="primary")
+                survey_submitted = form_submit_button("Complete Survey", type="primary")
 
             with col2:
-                if st.form_submit_button("Skip Survey"):
+                if form_submit_button("Skip Survey"):
                     return self._create_default_survey_data()
 
         if survey_submitted:
@@ -341,7 +342,7 @@ class SurveyUI:
                     value=current_learning.get("difficulty_preference", "Intermediate"),
                 )
 
-                if st.form_submit_button("Update Learning Preferences"):
+                if form_submit_button("Update Learning Preferences"):
                     updated_data = current_data.copy()
                     updated_data["learning_preferences"] = {
                         **current_learning,

@@ -6,6 +6,11 @@ Provides centralized configuration with environment variable overrides and featu
 import os
 from dataclasses import dataclass, field
 from typing import Any
+# Pydantic v2+: BaseSettings lives in pydantic-settings.
+try:
+    from pydantic_settings import BaseSettings  # v2 path
+except Exception:  # Fallback for environments still on Pydantic v1
+    from pydantic import BaseSettings  # v1 path
 
 # Load .env early so all os.getenv calls see variables
 try:
@@ -13,6 +18,15 @@ try:
     load_dotenv()
 except Exception:
     pass  # safe no-op if python-dotenv is missing
+
+class PersistenceSettings(BaseSettings):
+    """
+    Persistence-related feature flags.
+    transactional_register:
+        When True, user registration is executed in an explicit DB transaction
+        via get_session() context. When False, legacy non-transactional path is used.
+    """
+    transactional_register: bool = True
 
 @dataclass
 class DatabaseConfig:
@@ -283,6 +297,8 @@ class Config:
     storage: StorageConfig = field(default_factory=StorageConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     federated_learning: FederatedLearningConfig = field(default_factory=FederatedLearningConfig)
+    # NEW: persistence flags (ENV overrides via PERSISTENCE__TRANSACTIONAL_REGISTER)
+    persistence: PersistenceSettings = field(default_factory=PersistenceSettings)
     feature_flags: FeatureFlags = field(default_factory=FeatureFlags)
 
     # Application settings

@@ -14,6 +14,7 @@ import bcrypt
 from config.config import config
 from src.data.models import UserRole
 from src.data.repositories import UserRepository
+from src.data.database import get_session   # NEW: explicit transaction scope
 from src.data.schemas import UserCreate, UserLogin, UserResponse
 from src.services.session_manager import SessionManager
 
@@ -54,44 +55,98 @@ class AuthenticationLogic:
     def register_user(self, user_data: UserCreate) -> UserResponse:
         """
         Register a new user with password hashing and pseudonymization.
-
-        Args:
-            user_data: User registration data
-
-        Returns:
-            UserResponse: Created user information
-
-        Raises:
-            UserAlreadyExistsError: If username already exists
-            AuthenticationError: If registration fails
+        This version supports a transactional mode controlled by config.persistence.transactional_register.
         """
+        # Fail-safe: default to transactional=True if persistence block is missing
         try:
-            # Check if user already exists
+            transactional = bool(getattr(getattr(config, "persistence", object()), "transactional_register", True))
+        except Exception:
+            transactional = True
+
+        try:
+            if transactional:
+                # --- Transactional path (recommended) ---
+                # Open a DB transaction and bind a fresh repository to it.
+                with get_session() as db:
+                    repo = UserRepository(db)
+
+                    # Check if user already exists
+                    existing_user = repo.get_by_username(user_data.username)
+                    if existing_user:
+                        raise UserAlreadyExistsError(
+                            f"User with username '{user_data.username}' already exists"
+                        )
+
+                    # Hash password
+                    password_hash = self._hash_password(user_data.password)
+
+                    # Generate & ensure unique pseudonym
+                    pseudonym = self._generate_pseudonym()
+                    while repo.get_by_pseudonym(pseudonym):
+                        pseudonym = self._generate_pseudonym()
+
+                    # Create user; commit is handled by get_session() context on exit
+                    \
+\
+user = repo.create(user_data, password_hash, pseudonym)
+                    if not user:
+                        raise AuthenticationError("Failed to create user")
+
+
+
+                    # --- NEW: explicit commit to guarantee persistence immediately
+                    try:
+                        db.commit()
+                        logger.debug("register_user: explicit commit succeeded")
+                    except Exception as ce:
+                        logger.error(f"register_user: explicit commit failed → rollback. Error: {ce}")
+                        db.rollback()
+                        raise
+
+                    # Optional: refresh to populate DB defaults/IDs (not required)
+                    try:
+                        db.refresh(user)
+                        logger.debug("register_user: refresh after commit succeeded")
+                    except Exception:
+                        logger.debug("register_user: refresh after commit skipped/failed (not critical)")
+                    # --- NEW: explicit commit to guarantee persistence immediately
+                    try:
+                        db.commit()
+                        logger.debug("register_user: explicit commit succeeded")
+                    except Exception as ce:
+                        logger.error(f"register_user: explicit commit failed → rollback. Error: {ce}")
+                        db.rollback()
+                        raise
+
+                    # Optional: refresh to populate DB defaults/IDs (not required)
+                    try:
+                        db.refresh(user)
+                        logger.debug("register_user: refresh after commit succeeded")
+                    except Exception:
+                        logger.debug("register_user: refresh after commit skipped/failed (not critical)")
+                    # Optional: refresh to populate DB defaults/IDs (not required)
+                    try:
+                        db.refresh(user)
+                    except Exception:
+                        pass
+
+                    logger.info(f"User registered successfully: {user.username} (transactional)")
+                    return UserResponse.model_validate(user)
+
+            # --- Non-transactional fallback (legacy) ---
             existing_user = self.user_repository.get_by_username(user_data.username)
             if existing_user:
                 raise UserAlreadyExistsError(
                     f"User with username '{user_data.username}' already exists"
                 )
-
-            # Hash password using bcrypt
             password_hash = self._hash_password(user_data.password)
-
-            # Generate pseudonym for privacy compliance
             pseudonym = self._generate_pseudonym()
-
-            # Ensure pseudonym is unique
             while self.user_repository.get_by_pseudonym(pseudonym):
                 pseudonym = self._generate_pseudonym()
-
-            # Create user
             user = self.user_repository.create(user_data, password_hash, pseudonym)
             if not user:
                 raise AuthenticationError("Failed to create user")
-
-            logger.info(
-                f"User registered successfully: {user.username} (pseudonym: {user.pseudonym})"
-            )
-
+            logger.info(f"User registered successfully: {user.username} (legacy)")
             return UserResponse.model_validate(user)
 
         except UserAlreadyExistsError:

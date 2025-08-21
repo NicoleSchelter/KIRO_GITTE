@@ -1,194 +1,147 @@
-"""
-Tooltip integration for GITTE system - KORRIGIERTE VERSION
-Provides tooltip functionality without key parameter conflicts.
-"""
-
-import logging
-from datetime import datetime
-from typing import Any, Optional, Callable
-
+from __future__ import annotations
+import re
 import streamlit as st
 
-logger = logging.getLogger(__name__)
+__all__ = [
+    "get_tooltip_integration",
+    "tooltip_button",
+    "tooltip_input",
+    "tooltip_checkbox",
+    "tooltip_selectbox",
+    "tooltip_text_area",
+    "tooltip_number_input",
+    "tooltip_radio",
+    "tooltip_multiselect",
+    "form_submit_button",
+]
 
+def _resolve_label(passed_label, kwargs: dict, fallback: str) -> tuple[str, dict]:
+    label = passed_label if passed_label is not None else kwargs.pop("label", None)
+    if not label or not str(label).strip():
+        placeholder = kwargs.get("placeholder")
+        key = kwargs.get("key")
+        if placeholder and str(placeholder).strip():
+            label = str(placeholder).strip()
+        elif key:
+            s = re.sub(r"[_\\-]+", " ", str(key)).strip()
+            label = s[:1].upper() + s[1:] if s else fallback
+        else:
+            label = fallback
+    kwargs.setdefault("label_visibility", "collapsed")
+    return label, kwargs
 
-class TooltipIntegration:
-    """Manages tooltip integration and form validation without key parameter issues."""
+class _NoopTooltipIntegration:
+    def wrap(self, widget_fn, *args, **kwargs):
+        return widget_fn(*args, **kwargs)
 
-    def __init__(self):
-        self.tooltips = {}
-        self.button_states = {}
-        if 'tooltip_integration_initialized' not in st.session_state:
-            st.session_state.tooltip_integration_initialized = True
+def get_tooltip_integration():
+    return _NoopTooltipIntegration()
 
-    def register_tooltip(self, tooltip_id: str, text: str) -> None:
-        """Register tooltip text for an ID."""
-        self.tooltips[tooltip_id] = text
+def tooltip_button(*args, **kwargs):
+    # Extract first positional arg as label if provided, otherwise use kwargs
+    passed_label = args[0] if args else None
+    remaining_args = args[1:] if args else ()
+    label, kwargs = _resolve_label(passed_label, kwargs, "Submit")
+    return st.button(label, *remaining_args, **kwargs)
 
-    def get_tooltip_text(self, tooltip_id: str) -> Optional[str]:
-        """Get tooltip text for an ID."""
-        return self.tooltips.get(tooltip_id, None)
+def tooltip_input(*args, **kwargs):
+    # Extract first positional arg as label if provided, otherwise use kwargs
+    passed_label = args[0] if args else None
+    remaining_args = args[1:] if args else ()
+    fallback = "Password" if kwargs.get("type") == "password" else "Input"
+    label, kwargs = _resolve_label(passed_label, kwargs, fallback)
+    return st.text_input(label, *remaining_args, **kwargs)
 
-    def form_button_with_validation(
-        self,
-        label: str,
-        tooltip_id: str,
-        form_valid: bool = True,
-        disabled: Optional[bool] = None,
-        help: Optional[str] = None,
-        button_type: str = "primary",
-        on_click: Optional[Callable] = None,
-        **kwargs
-    ) -> bool:
-        """
-        Create form submit button with validation - OHNE key parameter.
-        
-        Args:
-            label: Button text
-            tooltip_id: Unique identifier for tooltip and tracking
-            form_valid: Whether form validation passed
-            disabled: Manual disable state
-            help: Help text (overrides tooltip)
-            button_type: Button type
-            on_click: Callback function
-            **kwargs: Additional parameters for st.form_submit_button
-            
-        Returns:
-            bool: True if button was clicked
-        """
-        
-        # Get tooltip text if no help provided
-        tooltip_help = help or self.get_tooltip_text(tooltip_id)
-        
-        # Compute disabled state (manual disabled or validation failed)
-        is_disabled = (disabled is True) or (not form_valid)
-        
-        # Determine button type based on validation
-        resolved_type = "secondary" if not form_valid else button_type
-        
-        # Prepare parameters for st.form_submit_button (OHNE key parameter!)
-        button_params = {
-            'label': label,
-            'type': resolved_type,
-            'disabled': is_disabled
-        }
-        
-        # Add help text if available
-        if tooltip_help:
-            button_params['help'] = tooltip_help
-            
-        # Add callback if provided
-        if on_click:
-            button_params['on_click'] = on_click
-            
-        # Add other allowed parameters
-        allowed_params = ['args', 'kwargs', 'icon', 'use_container_width', 'width']
-        for param in allowed_params:
-            if param in kwargs:
-                button_params[param] = kwargs[param]
-        
-        try:
-            # Create submit button WITHOUT key parameter
-            submitted = st.form_submit_button(**button_params)
-            
-            # Track button state manually in session state
-            if submitted:
-                button_state_key = f"button_clicked_{tooltip_id}"
-                st.session_state[button_state_key] = {
-                    'clicked': True,
-                    'tooltip_id': tooltip_id,
-                    'timestamp': datetime.now(),
-                    'form_valid': form_valid,
-                    'label': label
-                }
-                
-                logger.info(f"Form button clicked: {tooltip_id} (valid: {form_valid})")
-            
-            return submitted
-            
-        except Exception as e:
-            logger.error(f"Error creating form submit button {tooltip_id}: {e}")
-            # Fallback button with minimal parameters
-            return st.form_submit_button(label=label, disabled=is_disabled)
+def tooltip_checkbox(*args, **kwargs):
+    # Extract first positional arg as label if provided, otherwise use kwargs
+    passed_label = args[0] if args else None
+    remaining_args = args[1:] if args else ()
+    label, kwargs = _resolve_label(passed_label, kwargs, "I accept the terms")
+    return st.checkbox(label, *remaining_args, **kwargs)
 
-    def get_button_state(self, tooltip_id: str) -> Optional[dict]:
-        """Get the last state of a button by tooltip_id."""
-        button_state_key = f"button_clicked_{tooltip_id}"
-        return st.session_state.get(button_state_key, None)
-
-    def clear_button_state(self, tooltip_id: str) -> None:
-        """Clear button state for tooltip_id."""
-        button_state_key = f"button_clicked_{tooltip_id}"
-        if button_state_key in st.session_state:
-            del st.session_state[button_state_key]
-
-    def was_button_clicked(self, tooltip_id: str) -> bool:
-        """Check if a specific button was clicked in this session."""
-        state = self.get_button_state(tooltip_id)
-        return state is not None and state.get('clicked', False)
-
-
-# Global tooltip integration instance
-_tooltip_integration_instance = None
-
-# In src/ui/tooltip_integration.py
-
-def get_tooltip_integration() -> TooltipIntegration:
-    """Get global tooltip integration instance."""
-    global _tooltip_integration_instance
-    if _tooltip_integration_instance is None:
-        _tooltip_integration_instance = TooltipIntegration()
-    return _tooltip_integration_instance
-
-def tooltip_input(label, tooltip, *args, **kwargs):
-    """
-    Wrapper for streamlit.text_input with tooltip support.
-    """
-    st.markdown(f"**{label}**  \n<span style='font-size:smaller;color:gray'>{tooltip}</span>", unsafe_allow_html=True)
-    return st.text_input("", *args, **kwargs)
+def tooltip_selectbox(*args, **kwargs):
+    # Current usage pattern: tooltip_selectbox(label, key, options=[...], index=0)
+    # Extract label and key from positional args
+    passed_label = args[0] if args else None
+    key = args[1] if len(args) > 1 else kwargs.pop('key', None)
+    remaining_args = args[2:] if len(args) > 2 else ()
     
-def tooltip_button(label, tooltip, *args, **kwargs):
-    """Button mit Tooltip."""
-    st.markdown(f"**{label}**  \n<span style='font-size:smaller;color:gray'>{tooltip}</span>", unsafe_allow_html=True)
-    return st.button("", *args, **kwargs)
+    # Get options from kwargs (required)
+    options = kwargs.pop('options', [])
+    
+    label, kwargs = _resolve_label(passed_label, kwargs, "Select an option")
+    return st.selectbox(label, options, key=key, *remaining_args, **kwargs)
+
+def tooltip_text_area(*args, **kwargs):
+    # Extract first positional arg as label if provided, otherwise use kwargs
+    passed_label = args[0] if args else None
+    remaining_args = args[1:] if args else ()
+    label, kwargs = _resolve_label(passed_label, kwargs, "Input text")
+    return st.text_area(label, *remaining_args, **kwargs)
+
+def tooltip_number_input(*args, **kwargs):
+    # Extract first positional arg as label if provided, otherwise use kwargs
+    passed_label = args[0] if args else None
+    remaining_args = args[1:] if args else ()
+    label, kwargs = _resolve_label(passed_label, kwargs, "Enter a number")
+    return st.number_input(label, *remaining_args, **kwargs)
+
+def tooltip_radio(*args, **kwargs):
+    # Current usage pattern would be: tooltip_radio(label, key, options=[...], index=0)
+    # Extract label and key from positional args
+    passed_label = args[0] if args else None
+    key = args[1] if len(args) > 1 else kwargs.pop('key', None)
+    remaining_args = args[2:] if len(args) > 2 else ()
+    
+    # Get options from kwargs (required)
+    options = kwargs.pop('options', [])
+    
+    label, kwargs = _resolve_label(passed_label, kwargs, "Choose an option")
+    return st.radio(label, options, key=key, *remaining_args, **kwargs)
+
+def tooltip_multiselect(*args, **kwargs):
+    # Current usage pattern would be: tooltip_multiselect(label, key, options=[...], default=[])
+    # Extract label and key from positional args
+    passed_label = args[0] if args else None
+    key = args[1] if len(args) > 1 else kwargs.pop('key', None)
+    remaining_args = args[2:] if len(args) > 2 else ()
+    
+    # Get options from kwargs (required)
+    options = kwargs.pop('options', [])
+    
+    label, kwargs = _resolve_label(passed_label, kwargs, "Select one or more")
+    return st.multiselect(label, options, key=key, *remaining_args, **kwargs)
 
 
-
-def tooltip_checkbox(label, tooltip, *args, **kwargs):
-    st.markdown(f"{label} <span style='font-size:smaller;color:gray'>{tooltip}</span>", unsafe_allow_html=True)
-    return st.checkbox("", *args, **kwargs)
-
-def tooltip_selectbox(label, tooltip, options, *args, **kwargs):
-    st.markdown(f"{label} <span style='font-size:smaller;color:gray'>{tooltip}</span>", unsafe_allow_html=True)
-    return st.selectbox("", options, *args, **kwargs)
-
-def form_submit_button(
-    label: str,
-    tooltip_id: str,
-    form_valid: bool = True,
-    disabled: Optional[bool] = None,
-    help: Optional[str] = None,
-    **kwargs
-) -> bool:
+def form_submit_button(label: str, key: str | None = None, form_valid: bool = True, **kwargs):
     """
-    Global wrapper function for form submit buttons with validation.
-    KORRIGIERTE VERSION - ohne key parameter.
+    Enhanced form submit button wrapper with backward compatibility.
+    
+    Args:
+        label: Button label text
+        key: Optional unique key (IGNORED - st.form_submit_button doesn't support keys)
+        form_valid: If False, button will be disabled
+        **kwargs: Additional arguments passed to st.form_submit_button
+        
+    Returns:
+        bool: True if button was clicked
+        
+    Note:
+        - All supported Streamlit 1.48.1+ parameters are forwarded except 'key'
+        - Form submit buttons are automatically keyed by Streamlit based on position
+        - Enforces non-empty labels to avoid Streamlit warnings
+        - Respects form_valid parameter by setting disabled state
     """
-    return get_tooltip_integration().form_button_with_validation(
-        label=label,
-        tooltip_id=tooltip_id,
-        form_valid=form_valid,
-        disabled=disabled,
-        help=help,
-        **kwargs
-    )
-
-
-def register_tooltip(tooltip_id: str, text: str) -> None:
-    """Register a tooltip globally."""
-    get_tooltip_integration().register_tooltip(tooltip_id, text)
-
-
-def get_tooltip_text(tooltip_id: str) -> Optional[str]:
-    """Get tooltip text globally."""
-    return get_tooltip_integration().get_tooltip_text(tooltip_id)
+    # Enforce non-empty label for accessibility and to avoid Streamlit warnings
+    if not label or not str(label).strip():
+        label = "Submit"
+    
+    # Respect form_valid parameter (disable when invalid)
+    # Only set disabled if not explicitly provided
+    if "disabled" not in kwargs:
+        kwargs["disabled"] = not form_valid
+    
+    # NOTE: st.form_submit_button does NOT support 'key' parameter
+    # The key parameter is accepted for API compatibility but ignored
+    # CRITICAL: Do not pass key parameter to st.form_submit_button
+    return st.form_submit_button(label, **kwargs)

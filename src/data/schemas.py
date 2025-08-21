@@ -8,8 +8,7 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-from pydantic.types import conint, constr
+from pydantic import BaseModel, ConfigDict, Field, field_validator, conint, constr
 
 
 class UserRole(str, Enum):
@@ -226,20 +225,18 @@ class PALDValidationResult(BaseSchema):
     """PALD validation result schema."""
 
     is_valid: bool
-    errors: list[str] = []
-    warnings: list[str] = []
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     coverage_percentage: float = Field(ge=0, le=100)
 
 
 class PALDDiff(BaseSchema):
     """PALD comparison result schema."""
 
-    added_fields: list[str] = []
-    removed_fields: list[str] = []
-    modified_fields: list[str] = []
-    unchanged_fields: list[str] = []
-    similarity_score: float = Field(ge=0, le=1)
-
+    added_fields: list[str] = Field(default_factory=list)
+    removed_fields: list[str] = Field(default_factory=list)
+    modified_fields: list[str] = Field(default_factory=list)
+    unchanged_fields: list[str] = Field(default_factory=list)
 
 class PALDCoverageMetrics(BaseSchema):
     """PALD coverage metrics schema."""
@@ -247,9 +244,8 @@ class PALDCoverageMetrics(BaseSchema):
     total_fields: int = Field(ge=0)
     filled_fields: int = Field(ge=0)
     coverage_percentage: float = Field(ge=0, le=100)
-    missing_fields: list[str] = []
-    field_completeness: dict[str, bool] = {}
-
+    missing_fields: list[str] = Field(default_factory=list)
+    field_completeness: dict[str, bool] = Field(default_factory=dict)
 
 # Audit log schemas
 class AuditLogBase(BaseSchema):

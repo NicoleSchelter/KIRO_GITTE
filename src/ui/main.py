@@ -9,15 +9,19 @@ try:
 except Exception:
     pass
 
-"""
-Main Streamlit application entry point for GITTE.
-Implements the guided onboarding flow and main application interface.
-"""
+#Main Streamlit application entry point for GITTE.
+#Implements the guided onboarding flow and main application interface.
 
 import sys
 from datetime import datetime
 from pathlib import Path
 from uuid import UUID
+# --- UUID normalization helper ---
+from typing import Union
+
+def to_uuid(value: Union[str, UUID]) -> UUID:
+    """Return a UUID, accepting either str or UUID."""
+    return value if isinstance(value, UUID) else UUID(str(value))
 
 import streamlit as st
 
@@ -83,7 +87,7 @@ def render_participant_interface(user_id: str) -> None:
     """Render interface for participant users with guided onboarding flow."""
 
     # Use the new onboarding system
-    onboarding_complete = render_guided_onboarding_flow(UUID(user_id))
+    onboarding_complete = render_guided_onboarding_flow(to_uuid(user_id))
 
     if onboarding_complete:
         render_main_application(user_id)
@@ -319,7 +323,7 @@ def render_settings_tab(user_id: str) -> None:
 
     # Onboarding status
     with st.expander("Onboarding Status", expanded=False):
-        render_onboarding_summary(UUID(user_id))
+        render_onboarding_summary(to_uuid(user_id))
 
     # User preferences
     with st.expander("Learning Preferences", expanded=False):
