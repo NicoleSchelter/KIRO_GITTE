@@ -26,6 +26,7 @@ class ConsentType(str, Enum):
     IMAGE_GENERATION = "image_generation"
     FEDERATED_LEARNING = "federated_learning"
     ANALYTICS = "analytics"
+    INVESTIGATION_PARTICIPATION = "investigation_participation"
 
 
 class AuditLogStatus(str, Enum):

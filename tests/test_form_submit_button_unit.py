@@ -132,5 +132,53 @@ class TestTooltipWrappers(unittest.TestCase):
         args, kwargs = mock_st.checkbox.call_args
         self.assertEqual(args[0], "I accept the terms")  # fallback for checkbox
 
+    @patch('src.ui.consent_ui.st')
+    @patch('src.ui.consent_ui.get_consent_service')
+    def test_render_onboarding_consent_functionality(self, mock_consent_service, mock_st):
+        """Test that render_onboarding_consent method works correctly."""
+        from src.ui.consent_ui import ConsentUI
+        from uuid import uuid4
+        
+        # Setup mocks
+        mock_consent_instance = Mock()
+        mock_consent_service.return_value = mock_consent_instance
+        mock_consent_instance.get_consent_status.return_value = {
+            'data_processing': False,
+            'ai_interaction': False
+        }
+        mock_consent_instance.record_bulk_consent = Mock()
+        
+        # Mock Streamlit components with proper context manager support
+        mock_st.write = Mock()
+        mock_st.subheader = Mock()
+        mock_st.caption = Mock()
+        mock_st.columns = Mock(return_value=[Mock(), Mock()])
+        mock_st.warning = Mock()
+        mock_st.success = Mock()
+        
+        # Mock form context manager
+        mock_form_context = Mock()
+        mock_form_context.__enter__ = Mock(return_value=mock_form_context)
+        mock_form_context.__exit__ = Mock(return_value=None)
+        mock_st.form = Mock(return_value=mock_form_context)
+        
+        # Mock form components
+        mock_st.checkbox = Mock(return_value=True)
+        mock_st.form_submit_button = Mock(return_value=True)
+        
+        # Create consent UI instance
+        consent_ui = ConsentUI()
+        
+        # Test the method
+        user_id = uuid4()
+        result = consent_ui.render_onboarding_consent(user_id)
+        
+        # Verify that key Streamlit components were called
+        mock_st.write.assert_called()
+        mock_st.form.assert_called_with("onboarding_consent_form")
+        
+        # The result should be True if consent was processed successfully
+        self.assertIsInstance(result, bool)
+
 if __name__ == "__main__":
     unittest.main()

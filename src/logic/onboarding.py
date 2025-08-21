@@ -398,13 +398,21 @@ def get_onboarding_logic() -> OnboardingLogic:
     from src.data.repositories import get_user_repository
     from src.services.consent_service import get_consent_service
 
-    # Note: In a real application, you'd want to manage the database session lifecycle properly
-    # For now, we'll create a new session each time
-    db_session_context = get_session()
-    db_session = db_session_context.__enter__()
-
-    return OnboardingLogic(
-        user_repository=get_user_repository(),
-        consent_service=get_consent_service(),
-        pald_manager=PALDManager(db_session),
-    )
+    # Create a new session for PALD manager
+    # Note: This creates a session that will be managed by the PALDManager
+    # In a production environment, consider using dependency injection
+    # or a proper session lifecycle management pattern
+    try:
+        session_context = get_session()
+        db_session = session_context.__enter__()
+        
+        # Create the onboarding logic with proper dependencies
+        return OnboardingLogic(
+            user_repository=get_user_repository(),
+            consent_service=get_consent_service(),
+            pald_manager=PALDManager(db_session),
+        )
+    except Exception as e:
+        # Log the error and raise a more specific exception
+        logger.error(f"Failed to initialize onboarding logic: {e}")
+        raise OnboardingError(f"Failed to initialize onboarding system: {e}")
