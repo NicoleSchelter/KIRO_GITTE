@@ -268,6 +268,13 @@ class FeatureFlags:
     enable_tooltip_system: bool = True
     enable_prerequisite_checks: bool = True
     enable_ux_audit_logging: bool = True
+    
+    # PALD Boundary Enforcement flags
+    mandatory_pald_extraction: bool = True
+    pald_analysis_deferred: bool = True
+    enable_pald_boundary_enforcement: bool = True
+    enable_pald_schema_evolution: bool = True
+    enable_pald_candidate_harvesting: bool = True
 
     def __post_init__(self):
         """Override feature flags from environment variables."""
@@ -275,6 +282,34 @@ class FeatureFlags:
             env_var = f"FEATURE_{flag_name.upper()}"
             if env_value := os.getenv(env_var):
                 setattr(self, flag_name, env_value.lower() == "true")
+
+
+@dataclass
+class PALDBoundaryConfig:
+    """Configuration for PALD boundary enforcement and schema evolution."""
+    
+    # Schema management
+    pald_schema_file_path: str = "config/pald_schema.json"
+    pald_schema_cache_ttl: int = 300  # 5 minutes
+    pald_schema_checksum_log: bool = True
+    
+    # Candidate harvesting
+    pald_candidate_min_support: int = 5
+    candidate_review_required: bool = True
+    
+    # Migration settings
+    migration_batch_size: int = 100
+    migration_timeout_minutes: int = 60
+    enable_migration_rollback: bool = True
+    
+    def __post_init__(self):
+        """Override from environment variables."""
+        if env_path := os.getenv("PALD_SCHEMA_FILE_PATH"):
+            self.pald_schema_file_path = env_path
+        if env_ttl := os.getenv("PALD_SCHEMA_CACHE_TTL"):
+            self.pald_schema_cache_ttl = int(env_ttl)
+        if env_support := os.getenv("PALD_CANDIDATE_MIN_SUPPORT"):
+            self.pald_candidate_min_support = int(env_support)
 
 
 @dataclass
@@ -300,6 +335,7 @@ class Config:
     # NEW: persistence flags (ENV overrides via PERSISTENCE__TRANSACTIONAL_REGISTER)
     persistence: PersistenceSettings = field(default_factory=PersistenceSettings)
     feature_flags: FeatureFlags = field(default_factory=FeatureFlags)
+    pald_boundary: PALDBoundaryConfig = field(default_factory=PALDBoundaryConfig)
 
     # Application settings
     app_name: str = "GITTE"

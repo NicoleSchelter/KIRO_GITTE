@@ -11,9 +11,9 @@ from uuid import UUID
 
 from src.data.models import ConsentType
 from src.data.repositories import UserRepository
-from src.data.schemas import PALDDataCreate
-from src.logic.pald import PALDManager
 from src.services.consent_service import ConsentService
+from src.services.onboarding_progress_service import OnboardingProgressService
+from src.services.user_preferences_service import UserPreferencesService
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +64,13 @@ class OnboardingLogic:
         self,
         user_repository: UserRepository,
         consent_service: ConsentService,
-        pald_manager: PALDManager,
+        onboarding_service: OnboardingProgressService,
+        preferences_service: UserPreferencesService,
     ):
         self.user_repository = user_repository
         self.consent_service = consent_service
-        self.pald_manager = pald_manager
+        self.onboarding_service = onboarding_service
+        self.preferences_service = preferences_service
 
         # Define onboarding flow steps
         self.flow_steps = [
@@ -106,8 +108,8 @@ class OnboardingLogic:
             Dict containing onboarding state information
         """
         try:
-            # Get user's PALD data to check onboarding progress
-            pald_data_list = self.pald_manager.get_user_pald_data(user_id)
+            # Get user's onboarding progress from dedicated table
+            progress = self.onboarding_service.get_user_progress(user_id)
 
             # Check if user has completed onboarding
             onboarding_complete = False
@@ -115,27 +117,16 @@ class OnboardingLogic:
             completed_steps = []
             personalization_data = {}
 
-            if pald_data_list:
-                # Find onboarding-related PALD data
-                for pald_data in pald_data_list:
-                    content = pald_data.pald_content
-
-                    # Check for survey completion
-                    if content.get("survey_completed_at"):
-                        completed_steps.append(OnboardingStep.SURVEY)
-                        personalization_data.update(content)
-
-                    # Check for embodiment design completion
-                    if content.get("embodiment_characteristics"):
-                        completed_steps.append(OnboardingStep.DESIGN)
-                        personalization_data["embodiment_characteristics"] = content.get(
-                            "embodiment_characteristics"
-                        )
-
-                    # Check for onboarding completion marker
-                    if content.get("onboarding_completed_at"):
-                        onboarding_complete = True
-                        completed_steps = self.flow_steps[:-1]  # All except COMPLETE
+            if progress:
+                current_step = OnboardingStep(progress.current_step) if progress.current_step != "complete" else OnboardingStep.COMPLETE
+                completed_steps = [OnboardingStep(step) for step in (progress.completed_steps or [])]
+                personalization_data = progress.step_data or {}
+                onboarding_complete = progress.completed_at is not None
+                
+                # Get user preferences for additional personalization data
+                user_prefs = self.preferences_service.get_user_preferences(user_id)
+                for pref in user_prefs:
+                    personalization_data[f"{pref.category}_preferences"] = pref.preferences
 
             # Check consent completion
             consent_status = self.consent_service.get_consent_status(user_id)
@@ -143,7 +134,7 @@ class OnboardingLogic:
                 completed_steps.append(OnboardingStep.CONSENT)
 
             # Determine current step
-            if not onboarding_complete:
+            if not onboarding_complete and not progress:
                 for step in self.flow_steps:
                     if step not in completed_steps:
                         current_step = step
@@ -151,6 +142,8 @@ class OnboardingLogic:
                 else:
                     current_step = OnboardingStep.COMPLETE
             else:
+                if not progress:
+                    current_step = OnboardingStep.CONSENT
                 current_step = OnboardingStep.COMPLETE
 
             # Calculate progress
@@ -252,7 +245,7 @@ class OnboardingLogic:
         self, user_id: UUID, data_type: str, data: dict[str, Any]
     ) -> None:
         """
-        Collect and store personalization data during onboarding.
+        Collect and store personalization data during onboarding in appropriate tables.
 
         Args:
             user_id: User identifier
@@ -260,17 +253,18 @@ class OnboardingLogic:
             data: Personalization data to store
         """
         try:
-            # Create PALD data entry for personalization
-            pald_content = {
+            # Store personalization data in user preferences (NOT PALD)
+            preferences_data = {
                 "data_type": data_type,
                 "collected_at": datetime.now().isoformat(),
-                "onboarding_data": True,
                 **data,
             }
-
-            pald_create = PALDDataCreate(pald_content=pald_content, schema_version="1.0")
-
-            self.pald_manager.create_pald_data(user_id, pald_create)
+            
+            self.preferences_service.save_preferences(
+                user_id=user_id,
+                preferences=preferences_data,
+                category=f"onboarding_{data_type}"
+            )
 
             logger.info(f"Collected personalization data for user {user_id}: {data_type}")
 
@@ -290,12 +284,20 @@ class OnboardingLogic:
         """
         try:
             state = self.get_user_onboarding_state(user_id)
+            
+            # Get user preferences for additional summary data
+            user_prefs = self.preferences_service.get_user_preferences(user_id)
 
             # Get consent summary
             consent_status = self.consent_service.get_consent_status(user_id)
 
             # Extract key personalization data
             personalization = state.get("personalization_data", {})
+            
+            # Add preferences data to summary
+            for pref in user_prefs:
+                if pref.category.startswith("onboarding_"):
+                    personalization[pref.category] = pref.preferences
 
             summary = {
                 "user_id": user_id,
@@ -307,8 +309,8 @@ class OnboardingLogic:
                 "consents_given": sum(1 for granted in consent_status.values() if granted),
                 "total_consent_types": len(consent_status),
                 "learning_preferences": personalization.get("learning_preferences", {}),
-                "embodiment_design": personalization.get("embodiment_characteristics", {}),
-                "survey_completed": bool(personalization.get("survey_completed_at")),
+                "embodiment_design": personalization.get("onboarding_design", {}),
+                "survey_completed": any("survey" in pref.category for pref in user_prefs),
                 "onboarding_completed": state["onboarding_complete"],
             }
 
@@ -346,13 +348,15 @@ class OnboardingLogic:
     def _store_step_data(self, user_id: UUID, step: OnboardingStep, data: dict[str, Any]) -> None:
         """Store data collected during a specific step."""
         try:
-            step_data = {
-                "step": step.value,
-                "completed_at": datetime.now().isoformat(),
-                "step_data": data,
-            }
-
-            self.collect_personalization_data(user_id, f"onboarding_step_{step.value}", step_data)
+            # Store step data in onboarding progress table
+            self.onboarding_service.update_progress(
+                user_id=user_id,
+                step=step.value,
+                step_data={
+                    f"{step.value}_data": data,
+                    f"{step.value}_completed_at": datetime.now().isoformat()
+                }
+            )
 
         except Exception as e:
             logger.error(f"Error storing step data for user {user_id}, step {step}: {e}")
@@ -361,14 +365,8 @@ class OnboardingLogic:
     def _mark_step_completed(self, user_id: UUID, step: OnboardingStep) -> None:
         """Mark a specific step as completed."""
         try:
-            completion_data = {
-                "step_completed": step.value,
-                "completed_at": datetime.now().isoformat(),
-            }
-
-            self.collect_personalization_data(
-                user_id, f"step_completion_{step.value}", completion_data
-            )
+            # Mark step as completed in onboarding progress
+            self.onboarding_service.mark_step_completed(user_id, step.value)
 
         except Exception as e:
             logger.error(f"Error marking step completed for user {user_id}, step {step}: {e}")
@@ -377,13 +375,8 @@ class OnboardingLogic:
     def _complete_onboarding(self, user_id: UUID) -> None:
         """Mark onboarding as fully completed."""
         try:
-            completion_data = {
-                "onboarding_completed_at": datetime.now().isoformat(),
-                "completion_version": "1.0",
-                "all_steps_completed": True,
-            }
-
-            self.collect_personalization_data(user_id, "onboarding_completion", completion_data)
+            # Mark onboarding as completed in progress table
+            self.onboarding_service.complete_onboarding(user_id)
 
             logger.info(f"Onboarding completed for user {user_id}")
 
@@ -397,20 +390,22 @@ def get_onboarding_logic() -> OnboardingLogic:
     from src.data.database import get_session
     from src.data.repositories import get_user_repository
     from src.services.consent_service import get_consent_service
+    from src.services.onboarding_progress_service import OnboardingProgressService
+    from src.services.user_preferences_service import UserPreferencesService
 
-    # Create a new session for PALD manager
-    # Note: This creates a session that will be managed by the PALDManager
+    # Create a new session for services
     # In a production environment, consider using dependency injection
     # or a proper session lifecycle management pattern
     try:
         session_context = get_session()
         db_session = session_context.__enter__()
         
-        # Create the onboarding logic with proper dependencies
+        # Create the onboarding logic with proper service dependencies
         return OnboardingLogic(
             user_repository=get_user_repository(),
             consent_service=get_consent_service(),
-            pald_manager=PALDManager(db_session),
+            onboarding_service=OnboardingProgressService(db_session),
+            preferences_service=UserPreferencesService(db_session),
         )
     except Exception as e:
         # Log the error and raise a more specific exception

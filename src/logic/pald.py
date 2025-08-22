@@ -38,27 +38,40 @@ class PALDManager:
 
     def create_pald_data(self, user_id: UUID, pald_create: PALDDataCreate) -> PALDDataResponse:
         """Create new PALD data for a user."""
-        # Validate the PALD data against current schema
-        validation_result = self.schema_service.validate_pald_data(
-            pald_create.pald_content, pald_create.schema_version
-        )
+        try:
+            # Validate the PALD data against current schema
+            validation_result = self.schema_service.validate_pald_data(
+                pald_create.pald_content, pald_create.schema_version
+            )
 
-        # Create PALD data record
-        pald_data = PALDData(
-            user_id=user_id,
-            pald_content=pald_create.pald_content,
-            schema_version=pald_create.schema_version,
-            is_validated=validation_result.is_valid,
-            validation_errors=(
-                {"errors": validation_result.errors} if validation_result.errors else None
-            ),
-        )
+            # Create PALD data record
+            pald_data = PALDData(
+                user_id=user_id,
+                pald_content=pald_create.pald_content,
+                schema_version=pald_create.schema_version,
+                is_validated=validation_result.is_valid,
+                validation_errors=(
+                    {"errors": validation_result.errors} if validation_result.errors else None
+                ),
+            )
 
-        created_pald = self.repository.create(pald_data)
+            created_pald = self.repository.create(pald_data)
+            
+            if not created_pald:
+                raise ValueError("Failed to create PALD data in repository")
+            
+            # Explicitly commit the transaction
+            self.db_session.commit()
 
-        logger.info(f"Created PALD data for user {user_id}, valid: {validation_result.is_valid}")
+            logger.info(f"Created PALD data for user {user_id}, valid: {validation_result.is_valid}")
 
-        return PALDDataResponse.model_validate(created_pald)
+            return PALDDataResponse.model_validate(created_pald)
+            
+        except Exception as e:
+            # Rollback in case of error
+            self.db_session.rollback()
+            logger.error(f"Error creating PALD data for user {user_id}: {e}")
+            raise e
 
     def update_pald_data(
         self, pald_id: UUID, user_id: UUID, pald_update: PALDDataUpdate

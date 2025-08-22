@@ -3,6 +3,13 @@ name = "gitte"
 version = "0.1.0"
 description = "GITTE – Generative, modular learning assistant"
 requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "python-dotenv",
+    "SQLAlchemy",
+    "streamlit"
+]
 
 [tool.black]
 line-length = 100
@@ -27,8 +34,4 @@ testpaths = ["tests"]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
-pydantic>=2.0
-pydantic-settings>=2.0
-python-dotenv
-SQLAlchemy
-streamlit
+

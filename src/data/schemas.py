@@ -238,6 +238,7 @@ class PALDDiff(BaseSchema):
     removed_fields: list[str] = Field(default_factory=list)
     modified_fields: list[str] = Field(default_factory=list)
     unchanged_fields: list[str] = Field(default_factory=list)
+    similarity_score: float = Field(default=0.0, ge=0.0, le=1.0)
 
 class PALDCoverageMetrics(BaseSchema):
     """PALD coverage metrics schema."""

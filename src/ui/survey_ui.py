@@ -10,10 +10,11 @@ from uuid import UUID
 import streamlit as st
 
 from config.config import get_text
-from src.data.database import get_session
-from src.data.schemas import PALDDataCreate
-from src.logic.pald import PALDManager
+from src.data.database import get_session  
+from src.services.survey_response_service import SurveyResponseService
+from src.services.user_preferences_service import UserPreferencesService
 from src.ui.tooltip_integration import form_submit_button
+from src.logic.pald_boundary import PALDBoundaryEnforcer
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,10 @@ class SurveyUI:
     """UI components for personalization survey."""
 
     def __init__(self):
-        pass
+        # Initialize boundary enforcer for validation
+        from src.services.pald_schema_registry_service import PALDSchemaRegistryService
+        from config.config import config
+        # Note: These will be properly injected in production via dependency injection
 
     def render_personalization_survey(self, user_id: UUID) -> dict[str, Any] | None:
         """
@@ -226,9 +230,9 @@ class SurveyUI:
                 "survey_version": "1.0",
             }
 
-            # Save survey data as PALD data
+            # Save survey data to dedicated survey table (NOT PALD)
             try:
-                self._save_survey_as_pald(user_id, survey_data)
+                self._save_survey_response(user_id, survey_data)
                 st.success("Survey completed successfully! Your preferences have been saved.")
                 st.balloons()
 
@@ -236,7 +240,7 @@ class SurveyUI:
                 return survey_data
 
             except Exception as e:
-                logger.error(f"Failed to save survey data for user {user_id}: {e}")
+                logger.error(f"Failed to save survey response for user {user_id}: {e}")
                 st.error("Failed to save survey data. Please try again.")
                 return None
 
@@ -351,7 +355,7 @@ class SurveyUI:
                     }
 
                     try:
-                        self._save_survey_as_pald(user_id, updated_data)
+                        self._save_survey_response(user_id, updated_data)
                         st.success("Learning preferences updated!")
                         return updated_data
                     except Exception as e:
@@ -360,14 +364,25 @@ class SurveyUI:
 
         return None
 
-    def _save_survey_as_pald(self, user_id: UUID, survey_data: dict[str, Any]) -> None:
-        """Save survey data as PALD data."""
+    def _save_survey_response(self, user_id: UUID, survey_data: dict[str, Any]) -> None:
+        """Save survey data to dedicated survey response table."""
         with get_session() as db_session:
-            pald_manager = PALDManager(db_session)
+            try:
+                # Use dedicated survey response service
+                survey_service = SurveyResponseService(db_session)
+                result = survey_service.save_survey_response(
+                    user_id=user_id,
+                    survey_data=survey_data,
+                    survey_version=survey_data.get("survey_version", "1.0")
+                )
+                
+                logger.info(f"Successfully saved survey response with ID: {result.id}")
+                
+            except Exception as e:
+                logger.error(f"Error saving survey response for user {user_id}: {e}")
+                raise e
 
-            pald_create = PALDDataCreate(pald_content=survey_data, schema_version="1.0")
 
-            pald_manager.create_pald_data(user_id, pald_create)
 
     def _create_default_survey_data(self) -> dict[str, Any]:
         """Create default survey data for users who skip the survey."""

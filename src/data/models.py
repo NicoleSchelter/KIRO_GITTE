@@ -740,8 +740,7 @@ class BiasAnalysisResult(Base):
     bias_detected = Column(Boolean, nullable=False)
     confidence_score = Column(Float, nullable=False)       # 0.0 to 1.0
     bias_indicators = Column(JSONColumn, nullable=True)    # Specific bias indicators found
-    analysis_details = Column(JSONColumn, nullable=True)   # Detailed analysis results
-    processing_time_ms = Column(Integer, nullable=True)
+    analysis_details = Column(JSONColumn, nullable=True)    # Detailed analysis results
     created_at = Column(DateTime, nullable=False, default=func.now())
 
     # Relationships
@@ -751,10 +750,108 @@ class BiasAnalysisResult(Base):
         Index("idx_bias_result_job", "job_id"),
         Index("idx_bias_result_session", "session_id"),
         Index("idx_bias_result_type", "analysis_type"),
-        Index("idx_bias_result_detected", "bias_detected"),
+        Index("idx_bias_result_bias", "bias_detected"),
         Index("idx_bias_result_created", "created_at"),
     )
 
     def __repr__(self):
-        return f"<BiasAnalysisResult(id={self.id}, type={self.analysis_type}, detected={self.bias_detected})>"
-# === END PALD ENHANCEMENT ===
+        return f"<BiasAnalysisResult(id={self.id}, job_id={self.job_id}, type={self.analysis_type})>"
+
+
+# === PALD BOUNDARY ENFORCEMENT MODELS ===
+
+class SurveyResponse(Base):
+    """Survey response data model for storing user survey data separately from PALD."""
+    __tablename__ = "survey_responses"
+    
+    id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id = Column(PostgresUUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    survey_data = Column(JSONColumn, nullable=False)
+    survey_version = Column(String(50), nullable=False, default="1.0")
+    completed_at = Column(DateTime, nullable=False, default=func.now())
+    updated_at = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User", backref="survey_responses")
+    
+    __table_args__ = (
+        Index("idx_survey_user", "user_id"),
+        Index("idx_survey_completed", "completed_at"),
+        Index("idx_survey_version", "survey_version"),
+    )
+    
+    def __repr__(self):
+        return f"<SurveyResponse(id={self.id}, user_id={self.user_id}, version={self.survey_version})>"
+
+
+class OnboardingProgress(Base):
+    """Onboarding progress tracking model for workflow state management."""
+    __tablename__ = "onboarding_progress"
+    
+    id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id = Column(PostgresUUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    current_step = Column(String(100), nullable=False)
+    completed_steps = Column(JSONColumn, nullable=False, default=list)
+    step_data = Column(JSONColumn, nullable=True)
+    progress_percentage = Column(Float, nullable=False, default=0.0)
+    started_at = Column(DateTime, nullable=False, default=func.now())
+    completed_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User", backref="onboarding_progress")
+    
+    __table_args__ = (
+        Index("idx_onboarding_user", "user_id"),
+        Index("idx_onboarding_step", "current_step"),
+        Index("idx_onboarding_progress", "progress_percentage"),
+    )
+    
+    def __repr__(self):
+        return f"<OnboardingProgress(id={self.id}, user_id={self.user_id}, step={self.current_step})>"
+
+
+class UserPreferences(Base):
+    """User preferences model for non-embodiment user settings."""
+    __tablename__ = "user_preferences"
+    
+    id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id = Column(PostgresUUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    preferences = Column(JSONColumn, nullable=False)
+    category = Column(String(100), nullable=False, default="general")
+    created_at = Column(DateTime, nullable=False, default=func.now())
+    updated_at = Column(DateTime, nullable=False, default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User", backref="user_preferences")
+    
+    __table_args__ = (
+        Index("idx_preferences_user", "user_id"),
+        Index("idx_preferences_category", "category"),
+        Index("idx_preferences_user_category", "user_id", "category"),
+    )
+    
+    def __repr__(self):
+        return f"<UserPreferences(id={self.id}, user_id={self.user_id}, category={self.category})>"
+
+
+class SchemaVersion(Base):
+    """Schema version tracking model for runtime schema management."""
+    __tablename__ = "schema_versions"
+    
+    id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
+    version = Column(String(50), unique=True, nullable=False)
+    schema_content = Column(JSONColumn, nullable=False)
+    checksum = Column(String(64), nullable=False)
+    file_path = Column(String(500), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, nullable=False, default=func.now())
+    
+    __table_args__ = (
+        Index("idx_schema_version", "version"),
+        Index("idx_schema_active", "is_active"),
+        Index("idx_schema_checksum", "checksum"),
+    )
+    
+    def __repr__(self):
+        return f"<SchemaVersion(version={self.version}, active={self.is_active})>"
