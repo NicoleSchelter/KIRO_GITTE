@@ -149,7 +149,7 @@ class AuthenticationUI:
                     result = self.auth_logic.login_user(login_data)
 
                 # Store session info
-                st.session_state.user_id = result["user"].id
+                st.session_state.user_id = str(result["user"].id)  # Store as string for consistency
                 st.session_state.username = result["user"].username
                 st.session_state.user_role = result["user"].role
                 st.session_state.session_id = result["session"]["session_id"]
@@ -352,10 +352,10 @@ class AuthenticationUI:
                     
                     # Set authentication state
                     st.session_state["authenticated"] = True
-                    st.session_state["user_id"] = session_info["user_id"]
+                    st.session_state["user_id"] = str(session_info["user"].id)  # Store as string for consistency
                     st.session_state["username"] = username
                     st.session_state["user_role"] = user.role.value
-                    st.session_state["session_id"] = session_info.get("session_id")
+                    st.session_state["session_id"] = session_info["session"]["session_id"]
                     
                     logger.info(f"User registered and auto-authenticated successfully: {username}")
                     st.info("You have been automatically logged in!")

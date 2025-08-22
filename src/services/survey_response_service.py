@@ -23,7 +23,8 @@ class SurveyResponseService:
         self, 
         user_id: UUID, 
         survey_data: dict[str, Any],
-        survey_version: str = "1.0"
+        survey_version: str = "1.0",
+        auto_commit: bool = True
     ) -> 'SurveyResponse':
         """Save user survey response data."""
         try:
@@ -50,12 +51,19 @@ class SurveyResponseService:
                 )
                 self.db_session.add(response)
             
-            self.db_session.commit()
+            # Only commit if auto_commit is True (for backward compatibility)
+            if auto_commit:
+                self.db_session.commit()
+            else:
+                # Flush to get the ID but don't commit yet
+                self.db_session.flush()
+                
             logger.info(f"Saved survey response for user {user_id}")
             return response
             
         except Exception as e:
-            self.db_session.rollback()
+            if auto_commit:
+                self.db_session.rollback()
             logger.error(f"Error saving survey response for user {user_id}: {e}")
             raise
     
@@ -73,7 +81,8 @@ class SurveyResponseService:
     def update_survey_response(
         self, 
         user_id: UUID, 
-        updates: dict[str, Any]
+        updates: dict[str, Any],
+        auto_commit: bool = True
     ) -> 'SurveyResponse':
         """Update existing survey response."""
         existing = self.get_user_survey_data(user_id)
@@ -86,5 +95,6 @@ class SurveyResponseService:
         return self.save_survey_response(
             user_id=user_id,
             survey_data=updated_data,
-            survey_version=existing.survey_version
+            survey_version=existing.survey_version,
+            auto_commit=auto_commit
         )

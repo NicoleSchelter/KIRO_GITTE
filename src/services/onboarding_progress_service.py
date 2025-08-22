@@ -23,7 +23,8 @@ class OnboardingProgressService:
         self, 
         user_id: UUID, 
         step: str, 
-        step_data: dict[str, Any] | None = None
+        step_data: dict[str, Any] | None = None,
+        auto_commit: bool = True
     ) -> 'OnboardingProgress':
         """Update user's onboarding progress."""
         try:
@@ -51,12 +52,19 @@ class OnboardingProgressService:
                     progress.step_data = {**current_data, **step_data}
                 progress.updated_at = datetime.utcnow()
             
-            self.db_session.commit()
+            # Only commit if auto_commit is True (for backward compatibility)
+            if auto_commit:
+                self.db_session.commit()
+            else:
+                # Flush to get the ID but don't commit yet
+                self.db_session.flush()
+                
             logger.info(f"Updated onboarding progress for user {user_id}: {step}")
             return progress
             
         except Exception as e:
-            self.db_session.rollback()
+            if auto_commit:
+                self.db_session.rollback()
             logger.error(f"Error updating onboarding progress for user {user_id}: {e}")
             raise
     
@@ -71,7 +79,7 @@ class OnboardingProgressService:
             logger.error(f"Error retrieving onboarding progress for user {user_id}: {e}")
             return None
     
-    def mark_step_completed(self, user_id: UUID, step: str) -> None:
+    def mark_step_completed(self, user_id: UUID, step: str, auto_commit: bool = True) -> None:
         """Mark a specific onboarding step as completed."""
         progress = self.get_user_progress(user_id)
         if progress:
@@ -84,15 +92,24 @@ class OnboardingProgressService:
                 total_steps = 7
                 progress.progress_percentage = len(completed) / total_steps * 100
                 
-                self.db_session.commit()
+                if auto_commit:
+                    self.db_session.commit()
+                else:
+                    self.db_session.flush()
+                    
                 logger.info(f"Marked step '{step}' completed for user {user_id}")
     
-    def complete_onboarding(self, user_id: UUID) -> None:
+    def complete_onboarding(self, user_id: UUID, auto_commit: bool = True) -> None:
         """Mark onboarding as fully completed."""
         progress = self.get_user_progress(user_id)
         if progress:
             progress.completed_at = datetime.utcnow()
             progress.progress_percentage = 100.0
             progress.current_step = "complete"
-            self.db_session.commit()
+            
+            if auto_commit:
+                self.db_session.commit()
+            else:
+                self.db_session.flush()
+                
             logger.info(f"Completed onboarding for user {user_id}")

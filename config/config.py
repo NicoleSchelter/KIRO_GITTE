@@ -313,6 +313,34 @@ class PALDBoundaryConfig:
 
 
 @dataclass
+class PALDEnhancementConfig:
+    """Configuration for PALD enhancement features including bias analysis."""
+    
+    # Bias analysis settings
+    bias_analysis_enabled: bool = True
+    bias_job_priority_default: int = 10
+    bias_job_max_retries: int = 3
+    bias_job_timeout_minutes: int = 30
+    
+    # Schema evolution settings
+    schema_evolution_threshold: int = 5
+    schema_evolution_enabled: bool = True
+    
+    # Analysis settings
+    analysis_batch_size: int = 50
+    analysis_concurrent_limit: int = 3
+    
+    def __post_init__(self):
+        """Override from environment variables."""
+        if env_enabled := os.getenv("BIAS_ANALYSIS_ENABLED"):
+            self.bias_analysis_enabled = env_enabled.lower() == "true"
+        if env_priority := os.getenv("BIAS_JOB_PRIORITY_DEFAULT"):
+            self.bias_job_priority_default = int(env_priority)
+        if env_threshold := os.getenv("SCHEMA_EVOLUTION_THRESHOLD"):
+            self.schema_evolution_threshold = int(env_threshold)
+
+
+@dataclass
 class Config:
     """Main configuration class that aggregates all configuration sections."""
 
@@ -336,6 +364,7 @@ class Config:
     persistence: PersistenceSettings = field(default_factory=PersistenceSettings)
     feature_flags: FeatureFlags = field(default_factory=FeatureFlags)
     pald_boundary: PALDBoundaryConfig = field(default_factory=PALDBoundaryConfig)
+    pald_enhancement: PALDEnhancementConfig = field(default_factory=PALDEnhancementConfig)
 
     # Application settings
     app_name: str = "GITTE"
