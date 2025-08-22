@@ -237,26 +237,66 @@ class ChatUI:
                     with st.chat_message("assistant"):
                         st.write(message["content"])
 
-    def _render_chat_input(self, user_id: UUID) -> None:
-        """Render chat input field."""
-        user_input = st.chat_input("Type your message here...", key="main_chat_input")
+def _render_chat_input(self, user_id: UUID) -> None:
+    """Render chat input field with unique keys."""
+    # Generate unique key based on user and timestamp
+    chat_session_key = f"chat_input_{user_id}_{int(time.time() / 300)}"  # 5min windows
+    
+    # Initialize input state if not exists
+    if f"chat_state_{user_id}" not in st.session_state:
+        st.session_state[f"chat_state_{user_id}"] = {
+            "message_count": 0,
+            "last_activity": time.time(),
+            "input_key": chat_session_key
+        }
+    
+    user_input = st.chat_input(
+        "Type your message here...", 
+        key=st.session_state[f"chat_state_{user_id}"]["input_key"]
+    )
 
-        if user_input:
-            # Add user message to history
-            st.session_state.chat_messages.append(
-                {"role": "user", "content": user_input, "timestamp": time.time()}
-            )
+    if user_input:
+        # Increment message count for unique keys
+        st.session_state[f"chat_state_{user_id}"]["message_count"] += 1
+        st.session_state[f"chat_state_{user_id}"]["last_activity"] = time.time()
+        
+        # Process message without immediate rerun
+        self._add_message_and_process(user_id, user_input)
 
-            # Process user input and get response
-            with st.spinner("Thinking..."):
-                response = self._process_chat_input(user_id, user_input)
+    def _add_message_and_process(self, user_id: UUID, message: str) -> None:
+        """Add message and process response without triggering rerun."""
+        try:
+            # Add user message
+            chat_key = f"chat_messages_{user_id}"
+            if chat_key not in st.session_state:
+                st.session_state[chat_key] = []
+            
+            st.session_state[chat_key].append({
+                "role": "user",
+                "content": message.strip(),
+                "timestamp": time.time(),
+                "id": f"msg_{len(st.session_state[chat_key])}"
+            })
 
-            # Add assistant response to history
-            st.session_state.chat_messages.append(
-                {"role": "assistant", "content": response, "timestamp": time.time()}
-            )
+            # Process in background without rerun
+            with st.spinner("🤖 Assistant is thinking..."):
+                response = self._process_chat_input(user_id, message)
 
+            # Add assistant response
+            st.session_state[chat_key].append({
+                "role": "assistant", 
+                "content": response, 
+                "timestamp": time.time(),
+                "id": f"msg_{len(st.session_state[chat_key])}"
+            })
+
+            # Single rerun at the end
             st.rerun()
+
+        except Exception as e:
+            logger.error(f"Error processing message: {e}")
+            st.error("Failed to send message. Please try again.")
+
 
     def _render_chat_controls(self) -> None:
         """Render chat control buttons."""
@@ -602,3 +642,98 @@ def render_embodiment_design_chat(user_id: UUID) -> dict[str, Any] | None:
 def render_chat_history(user_id: UUID) -> None:
     """Render chat history."""
     chat_ui.render_chat_history(user_id)
+
+# === Task 9: PALD Response Helpers (append-only) =============================
+# Pure helpers for banners/notices/summary lines + thin Streamlit wrapper.
+# NOTE: We keep imports inside the functions where possible to avoid hard deps.
+
+from typing import Optional, List
+
+try:
+    # Import UI contracts for typing and helper logic.
+    from src.ui.contracts import PALDProcessingResponse, UiJobStatus
+except Exception:  # pragma: no cover - typing fallback if contracts are missing at import time
+    PALDProcessingResponse = object  # type: ignore
+    class UiJobStatus:  # type: ignore
+        PENDING = "pending"
+        RUNNING = "running"
+        COMPLETED = "completed"
+        FAILED = "failed"
+
+def banner_text(status: "UiJobStatus") -> str:
+    """Return a human-readable banner text for a given job status."""
+    mapping = {
+        getattr(UiJobStatus, "PENDING", "pending"): "⏳ Processing request…",
+        getattr(UiJobStatus, "RUNNING", "running"): "🔧 Analysis in progress…",
+        getattr(UiJobStatus, "COMPLETED", "completed"): "✅ Processing completed successfully",
+        getattr(UiJobStatus, "FAILED", "failed"): "❌ Processing failed",
+    }
+    # Support Enum-like .value or plain strings
+    key = getattr(status, "value", status)
+    return mapping.get(key, f"Status: {key}")
+
+def defer_text(response: "PALDProcessingResponse") -> Optional[str]:
+    """Return a defer notice if heavy bias scan was deferred."""
+    notice = getattr(response, "defer_notice", None)
+    if not notice:
+        return None
+    if isinstance(notice, str):
+        return notice
+    return "⚠️ Heavy bias scan deferred. Results will be available later."
+
+def error_text(response: "PALDProcessingResponse") -> Optional[str]:
+    """Return user-facing error text (if present)."""
+    msg = getattr(response, "error_message", None)
+    return str(msg) if msg else None
+
+def pald_summary_lines(response: "PALDProcessingResponse", max_items: int = 20) -> List[str]:
+    """
+    Build a concise summary list:
+    1) The pald_diff_summary (truncated to max_items, with ellipsis)
+    2) A few populated pald_light keys for quick glance
+    """
+    lines: List[str] = []
+
+    # 1) diff
+    diff = list(getattr(response, "pald_diff_summary", []) or [])
+    if diff:
+        if len(diff) > max_items:
+            lines.extend(diff[:max_items])
+            lines.append("…")
+        else:
+            lines.extend(diff)
+
+    # 2) sample of pald_light
+    pald = dict(getattr(response, "pald_light", {}) or {})
+    shown = 0
+    for k, v in pald.items():
+        if shown >= 5:
+            lines.append("…")
+            break
+        lines.append(f"pald:{k} -> {v}")
+        shown += 1
+
+    return lines
+
+def render_pald_response(resp: "PALDProcessingResponse") -> None:
+    """
+    Thin Streamlit wrapper that uses the pure helpers above.
+    Guarded import ensures tests can import helpers without Streamlit installed.
+    """
+    try:
+        import streamlit as st  # guarded import
+    except Exception:
+        return
+
+    st.info(banner_text(resp.status))
+    dt = defer_text(resp)
+    if dt:
+        st.warning(dt)
+
+    for line in pald_summary_lines(resp):
+        st.write(f"- {line}")
+
+    et = error_text(resp)
+    if et:
+        st.error(et)
+# === End Task 9 append-only ===================================================

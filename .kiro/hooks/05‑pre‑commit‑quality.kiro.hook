@@ -1,11 +1,9 @@
 {
   "enabled": true,
   "name": "Pre-Commit Quality Gate",
-  "description": "Runs lint, typecheck, tests, and security scan before commit",
-  "version": "1",
-  "when": {
-    "type": "beforeCommit"
-  },
+  "description": "Lint, typecheck, deterministic tests, security",
+  "version": "2",
+  "when": { "type": "beforeCommit" },
   "then": {
     "type": "runCommands",
     "shell": "bash",
@@ -13,7 +11,7 @@
       "ruff check .",
       "black --check .",
       "mypy --config-file mypy.ini src",
-      "pytest -q -m 'not slow and not gpu and not e2e'",
+      "PYTEST_ADDOPTS='-q -m \"not slow and not gpu and not e2e\"' HYPOTHESIS_PROFILE=ci pytest --maxfail=1",
       "bandit -r src -lll"
     ]
   }

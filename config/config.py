@@ -6,7 +6,27 @@ Provides centralized configuration with environment variable overrides and featu
 import os
 from dataclasses import dataclass, field
 from typing import Any
+# Pydantic v2+: BaseSettings lives in pydantic-settings.
+try:
+    from pydantic_settings import BaseSettings  # v2 path
+except Exception:  # Fallback for environments still on Pydantic v1
+    from pydantic import BaseSettings  # v1 path
 
+# Load .env early so all os.getenv calls see variables
+try:
+    from dotenv import load_dotenv  # type: ignore
+    load_dotenv()
+except Exception:
+    pass  # safe no-op if python-dotenv is missing
+
+class PersistenceSettings(BaseSettings):
+    """
+    Persistence-related feature flags.
+    transactional_register:
+        When True, user registration is executed in an explicit DB transaction
+        via get_session() context. When False, legacy non-transactional path is used.
+    """
+    transactional_register: bool = True
 
 @dataclass
 class DatabaseConfig:
@@ -18,9 +38,11 @@ class DatabaseConfig:
     echo: bool = False
 
     def __post_init__(self):
-        # Override with environment variable if provided
-        if env_dsn := os.getenv("POSTGRES_DSN"):
+        # Prefer explicit DSN from env; support both POSTGRES_DSN and DATABASE_URL
+        env_dsn = os.getenv("POSTGRES_DSN") or os.getenv("DATABASE_URL")
+        if env_dsn:
             self.dsn = env_dsn
+
 
 
 @dataclass
@@ -52,6 +74,38 @@ class ImageGenerationConfig:
     def __post_init__(self):
         if env_model := os.getenv("SD_MODEL_NAME"):
             self.model_name = env_model
+
+
+@dataclass
+class ImageIsolationConfig:
+    """Image isolation and quality detection configuration."""
+
+    enabled: bool = True
+    endpoint: str = "http://localhost:8080/isolate"  # URL or local binary path
+    timeout_seconds: int = 20
+    retries: int = 2
+    model_default: str = "u2net"
+    detection_confidence_threshold: float = 0.7
+    edge_refinement_enabled: bool = True
+    background_removal_method: str = "rembg"  # rembg, opencv, transparent, uniform
+    fallback_to_original: bool = True
+    max_processing_time: int = 10  # seconds
+    output_format: str = "PNG"  # PNG for transparency support
+    uniform_background_color: tuple = (255, 255, 255)
+
+    def __post_init__(self):
+        if env_enabled := os.getenv("IMAGE_ISOLATION_ENABLED"):
+            self.enabled = env_enabled.lower() == "true"
+        if env_endpoint := os.getenv("ISOLATION_ENDPOINT"):
+            self.endpoint = env_endpoint
+        if env_timeout := os.getenv("ISOLATION_TIMEOUT"):
+            self.timeout_seconds = int(env_timeout)
+        if env_retries := os.getenv("ISOLATION_RETRIES"):
+            self.retries = int(env_retries)
+        if env_model := os.getenv("ISOLATION_MODEL"):
+            self.model_default = env_model
+        if env_threshold := os.getenv("IMAGE_ISOLATION_CONFIDENCE_THRESHOLD"):
+            self.detection_confidence_threshold = float(env_threshold)
 
 
 @dataclass
@@ -109,6 +163,93 @@ class FederatedLearningConfig:
 
 
 @dataclass
+class ImageCorrectionConfig:
+    """Image correction dialog configuration."""
+
+    enabled: bool = True
+    auto_show_dialog: bool = True
+    timeout_seconds: int = 300  # 5 minutes
+    allow_manual_crop: bool = True
+    allow_regeneration: bool = True
+    save_correction_history: bool = True
+    learning_from_corrections: bool = True
+
+    def __post_init__(self):
+        if env_enabled := os.getenv("IMAGE_CORRECTION_ENABLED"):
+            self.enabled = env_enabled.lower() == "true"
+        if env_timeout := os.getenv("IMAGE_CORRECTION_TIMEOUT"):
+            self.timeout_seconds = int(env_timeout)
+
+
+@dataclass
+class TooltipConfig:
+    """Tooltip system configuration."""
+
+    enabled: bool = True
+    show_delay_ms: int = 500
+    hide_delay_ms: int = 200
+    max_width: int = 300
+    position: str = "auto"  # auto, top, bottom, left, right
+    theme: str = "default"
+    track_interactions: bool = True
+    accessibility_mode: bool = False
+
+    def __post_init__(self):
+        if env_enabled := os.getenv("TOOLTIP_ENABLED"):
+            self.enabled = env_enabled.lower() == "true"
+        if env_delay := os.getenv("TOOLTIP_SHOW_DELAY"):
+            self.show_delay_ms = int(env_delay)
+
+
+@dataclass
+class PrerequisiteConfig:
+    """Prerequisite checking configuration."""
+
+    enabled: bool = True
+    cache_ttl_seconds: int = 300  # 5 minutes
+    parallel_execution: bool = True
+    timeout_seconds: int = 30
+    retry_attempts: int = 2
+    fail_on_required: bool = True
+    warn_on_recommended: bool = True
+    ignore_optional: bool = False
+    db_connection_timeout: int = 5
+    enable_image_isolation_check: bool = False
+    isolation_endpoint: str | None = None
+
+    def __post_init__(self):
+        if env_enabled := os.getenv("PREREQUISITE_CHECKS_ENABLED"):
+            self.enabled = env_enabled.lower() == "true"
+        if env_cache_ttl := os.getenv("PREREQUISITE_CACHE_TTL"):
+            self.cache_ttl_seconds = int(env_cache_ttl)
+        if env_db_to := os.getenv("DB_CONNECTION_TIMEOUT"):
+            self.db_connection_timeout = int(env_db_to)
+        if env_iso := os.getenv("ENABLE_IMAGE_ISOLATION_CHECK"):
+            self.enable_image_isolation_check = env_iso.lower() == "true"
+        if env_iso_ep := os.getenv("ISOLATION_ENDPOINT"):
+            self.isolation_endpoint = env_iso_ep
+
+
+@dataclass
+class UXAuditConfig:
+    """UX audit logging configuration."""
+
+    enabled: bool = True
+    log_tooltip_interactions: bool = True
+    log_correction_actions: bool = True
+    log_prerequisite_checks: bool = True
+    log_workflow_events: bool = True
+    retention_days: int = 90
+    anonymize_data: bool = False
+
+    def __post_init__(self):
+        if env_enabled := os.getenv("UX_AUDIT_ENABLED"):
+            self.enabled = env_enabled.lower() == "true"
+        if env_retention := os.getenv("UX_AUDIT_RETENTION_DAYS"):
+            self.retention_days = int(env_retention)
+
+
+@dataclass
 class FeatureFlags:
     """Feature flags for controlling system behavior."""
 
@@ -117,10 +258,23 @@ class FeatureFlags:
     enable_consistency_check: bool = False
     use_langchain: bool = False
     enable_image_generation: bool = True
+    enable_image_isolation: bool = True
+    enable_image_quality_detection: bool = True
+    enable_image_correction_dialog: bool = True
     enable_minio_storage: bool = True
     enable_audit_logging: bool = True
     enable_pald_evolution: bool = True
     enable_consent_gate: bool = True
+    enable_tooltip_system: bool = True
+    enable_prerequisite_checks: bool = True
+    enable_ux_audit_logging: bool = True
+    
+    # PALD Boundary Enforcement flags
+    mandatory_pald_extraction: bool = True
+    pald_analysis_deferred: bool = True
+    enable_pald_boundary_enforcement: bool = True
+    enable_pald_schema_evolution: bool = True
+    enable_pald_candidate_harvesting: bool = True
 
     def __post_init__(self):
         """Override feature flags from environment variables."""
@@ -128,6 +282,62 @@ class FeatureFlags:
             env_var = f"FEATURE_{flag_name.upper()}"
             if env_value := os.getenv(env_var):
                 setattr(self, flag_name, env_value.lower() == "true")
+
+
+@dataclass
+class PALDBoundaryConfig:
+    """Configuration for PALD boundary enforcement and schema evolution."""
+    
+    # Schema management
+    pald_schema_file_path: str = "config/pald_schema.json"
+    pald_schema_cache_ttl: int = 300  # 5 minutes
+    pald_schema_checksum_log: bool = True
+    
+    # Candidate harvesting
+    pald_candidate_min_support: int = 5
+    candidate_review_required: bool = True
+    
+    # Migration settings
+    migration_batch_size: int = 100
+    migration_timeout_minutes: int = 60
+    enable_migration_rollback: bool = True
+    
+    def __post_init__(self):
+        """Override from environment variables."""
+        if env_path := os.getenv("PALD_SCHEMA_FILE_PATH"):
+            self.pald_schema_file_path = env_path
+        if env_ttl := os.getenv("PALD_SCHEMA_CACHE_TTL"):
+            self.pald_schema_cache_ttl = int(env_ttl)
+        if env_support := os.getenv("PALD_CANDIDATE_MIN_SUPPORT"):
+            self.pald_candidate_min_support = int(env_support)
+
+
+@dataclass
+class PALDEnhancementConfig:
+    """Configuration for PALD enhancement features including bias analysis."""
+    
+    # Bias analysis settings
+    bias_analysis_enabled: bool = True
+    bias_job_priority_default: int = 10
+    bias_job_max_retries: int = 3
+    bias_job_timeout_minutes: int = 30
+    
+    # Schema evolution settings
+    schema_evolution_threshold: int = 5
+    schema_evolution_enabled: bool = True
+    
+    # Analysis settings
+    analysis_batch_size: int = 50
+    analysis_concurrent_limit: int = 3
+    
+    def __post_init__(self):
+        """Override from environment variables."""
+        if env_enabled := os.getenv("BIAS_ANALYSIS_ENABLED"):
+            self.bias_analysis_enabled = env_enabled.lower() == "true"
+        if env_priority := os.getenv("BIAS_JOB_PRIORITY_DEFAULT"):
+            self.bias_job_priority_default = int(env_priority)
+        if env_threshold := os.getenv("SCHEMA_EVOLUTION_THRESHOLD"):
+            self.schema_evolution_threshold = int(env_threshold)
 
 
 @dataclass
@@ -142,10 +352,19 @@ class Config:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     image_generation: ImageGenerationConfig = field(default_factory=ImageGenerationConfig)
+    image_isolation: ImageIsolationConfig = field(default_factory=ImageIsolationConfig)
+    image_correction: ImageCorrectionConfig = field(default_factory=ImageCorrectionConfig)
+    tooltip: TooltipConfig = field(default_factory=TooltipConfig)
+    prerequisite: PrerequisiteConfig = field(default_factory=PrerequisiteConfig)
+    ux_audit: UXAuditConfig = field(default_factory=UXAuditConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     federated_learning: FederatedLearningConfig = field(default_factory=FederatedLearningConfig)
+    # NEW: persistence flags (ENV overrides via PERSISTENCE__TRANSACTIONAL_REGISTER)
+    persistence: PersistenceSettings = field(default_factory=PersistenceSettings)
     feature_flags: FeatureFlags = field(default_factory=FeatureFlags)
+    pald_boundary: PALDBoundaryConfig = field(default_factory=PALDBoundaryConfig)
+    pald_enhancement: PALDEnhancementConfig = field(default_factory=PALDEnhancementConfig)
 
     # Application settings
     app_name: str = "GITTE"
@@ -191,7 +410,10 @@ def initialize_config() -> Config:
 
     # Apply environment-specific overrides
     try:
-        from .environments import environment_manager
+        try:
+            from .environments import environment_manager  # package import
+        except ImportError:
+            from environments import environment_manager   # top-level fallback
 
         environment = os.getenv("ENVIRONMENT", "development")
         config_with_env = environment_manager.apply_environment(base_config, environment)
@@ -242,3 +464,23 @@ except ImportError as e:
     def is_enabled(name: str) -> bool:
         """Fallback feature flag check."""
         return bool(get_flag(name))
+
+# ---------------------------------------------------------------------------
+# Retry defaults (global) + image-pipeline tuning
+# These are imported by utils/services (e.g., ux_error_handler / image isolation)
+# ---------------------------------------------------------------------------
+RETRY_DEFAULTS = {
+    "max_retries": 3,
+    "initial_backoff": 0.5,   # seconds
+    "max_backoff": 8.0,       # seconds
+    "jitter": 0.1,            # seconds added to each sleep (0.0 disables)
+    "retry_on": (TimeoutError, ConnectionError, Exception),  # narrow at call sites
+}
+
+IMAGE_RETRY = {
+    "max_retries": 4,
+    "initial_backoff": 0.25,
+    "max_backoff": 4.0,
+    "jitter": 0.05,
+    "retry_on": (TimeoutError, ConnectionError),
+}

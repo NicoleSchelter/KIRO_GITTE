@@ -3,9 +3,16 @@ Custom exception hierarchy for GITTE system.
 Provides structured error handling with user-friendly messages and proper categorization.
 """
 
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Optional, Any, Dict
 
+# --- helper to avoid duplicate kwargs for super().__init__ ---
+def _filtered_kwargs(kwargs, *keys):
+    """Return a copy of kwargs without the given keys (no-op if kwargs is None)."""
+    if not kwargs:
+        return {}
+    return {k: v for k, v in kwargs.items() if k not in keys}
 
 class ErrorSeverity(str, Enum):
     """Error severity levels."""
@@ -32,45 +39,69 @@ class ErrorCategory(str, Enum):
 
 
 class GITTEError(Exception):
-    """Base exception for all GITTE system errors."""
+    """
+    Basisfehler: nimmt optionale Felder entgegen und entfernt doppelte Keys,
+    falls Subklassen dieselben Argumente noch einmal via **kwargs übergeben.
+    """
 
     def __init__(
         self,
         message: str,
-        user_message: str | None = None,
-        error_code: str | None = None,
-        category: ErrorCategory = ErrorCategory.SYSTEM,
-        severity: ErrorSeverity = ErrorSeverity.MEDIUM,
-        details: dict[str, Any] | None = None,
-        cause: Exception | None = None,
-    ):
+        *,
+        user_message: Optional[str] = None,
+        category: Optional["ErrorCategory"] = None,
+        severity: Optional["ErrorSeverity"] = None,
+        details: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> None:
+        # Duplikate defensiv wegpoppen:
+        if user_message is None:
+            user_message = kwargs.pop("user_message", None)
+        else:
+            kwargs.pop("user_message", None)
+
+        if category is None:
+            category = kwargs.pop("category", None)
+        else:
+            kwargs.pop("category", None)
+
+        if severity is None:
+            severity = kwargs.pop("severity", None)
+        else:
+            kwargs.pop("severity", None)
+
+        if details is None:
+            details = kwargs.pop("details", None)
+        else:
+            kwargs.pop("details", None)
+
+        # Übrige kwargs ignorieren (oder bei Bedarf speichern)
         super().__init__(message)
+
         self.message = message
-        self.user_message = user_message or self._get_default_user_message()
-        self.error_code = error_code or self._generate_error_code()
+        self.user_message = user_message
         self.category = category
         self.severity = severity
         self.details = details or {}
-        self.cause = cause
+        
+        # Setze error_code aus kwargs falls vorhanden
+        self.error_code = kwargs.pop("error_code", None)
+        # Setze cause aus kwargs falls vorhanden
+        self.cause = kwargs.pop("cause", None)
 
-    def _get_default_user_message(self) -> str:
-        """Get default user-friendly message."""
-        return "An error occurred. Please try again or contact support if the problem persists."
-
-    def _generate_error_code(self) -> str:
-        """Generate error code based on exception class."""
-        return f"GITTE_{self.__class__.__name__.upper()}"
-
-    def to_dict(self) -> dict[str, Any]:
+    def __str__(self) -> str:
+        return self.message
+    
+    def to_dict(self) -> Dict[str, Any]:
         """Convert exception to dictionary for logging/serialization."""
         return {
-            "error_code": self.error_code,
             "message": self.message,
             "user_message": self.user_message,
-            "category": self.category.value,
-            "severity": self.severity.value,
+            "error_code": getattr(self, 'error_code', None),
+            "category": self.category.value if self.category else None,
+            "severity": self.severity.value if self.severity else None,
             "details": self.details,
-            "cause": str(self.cause) if self.cause else None,
+            "cause": getattr(self, 'cause', None),
         }
 
 
@@ -182,28 +213,43 @@ class BusinessLogicError(GITTEError):
         )
 
 
+# --- Consent errors (single source of truth) ---
 class ConsentError(BusinessLogicError):
     """Consent-related errors."""
 
     def __init__(self, message: str, **kwargs):
-        super().__init__(
-            message,
-            user_message="Consent is required to proceed with this action.",
-            category=ErrorCategory.PRIVACY,
-            **kwargs,
+        # Kategorie Privacy ist konsistenter als Authorization für Consent-Themen
+        super().__init__(message, category=ErrorCategory.PRIVACY, **kwargs)
+        # Optional eine nutzerfreundliche Default-Message:
+        self.user_message = kwargs.get(
+            "user_message", "Consent is required to proceed with this action."
         )
 
 
 class ConsentRequiredError(ConsentError):
-    """Required consent not provided."""
+    """
+    Raised when one or more consents are missing.
 
-    def __init__(self, consent_type: str, **kwargs):
-        super().__init__(
-            f"Required consent not provided: {consent_type}",
-            user_message=f"Please provide consent for {consent_type} to continue.",
-            details={"consent_type": consent_type},
-            **kwargs,
+    message: frei wählbar (Tests erwarten "Consent required for <type>")
+    required: optionale Iterable[str] für Details.
+    """
+
+    def __init__(self, message: str, required: list[str] | tuple[str, ...] | None = None, **kwargs):
+        details = {"required_consents": list(required) if required else []}
+        # Details aus kwargs (falls vorhanden) beibehalten/ergänzen:
+        details.update(kwargs.pop("details", {}))
+        super().__init__(message, details=details, **kwargs)
+        # leichte, generische User-Message:
+        self.user_message = kwargs.get(
+            "user_message", "Please review and accept the required consents to continue."
         )
+
+
+class ConsentWithdrawalError(ConsentError):
+    """Raised when consent withdrawal fails."""
+
+    def __init__(self, message: str = "Failed to withdraw consent", **kwargs):
+        super().__init__(message, **kwargs)
 
 
 class OnboardingError(BusinessLogicError):
@@ -514,3 +560,395 @@ class SuspiciousActivityError(SecurityError):
             details={"activity_type": activity_type},
             **kwargs,
         )
+
+
+# UX Enhancement Specific Exceptions
+
+
+# Image Processing Errors
+class ImageProcessingError(GITTEError):
+    """Base class for image processing errors."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message,
+            user_message="Image processing failed. Please try again with a different image.",
+            category=ErrorCategory.EXTERNAL_SERVICE,
+            severity=ErrorSeverity.MEDIUM,
+            **kwargs,
+        )
+
+
+class ImageIsolationError(ImageProcessingError):
+    """Image isolation specific errors."""
+
+    def __init__(self, message: str, isolation_method: str = "unknown", **kwargs):
+        super().__init__(
+            f"Image isolation failed using {isolation_method}: {message}",
+            details={"isolation_method": isolation_method},
+            **kwargs,
+        )
+        self.user_message = (
+            "Unable to isolate person from background. The original image will be used instead."
+        )
+
+
+class BackgroundRemovalError(ImageIsolationError):
+    """Background removal specific errors."""
+
+    def __init__(self, message: str, method: str = "rembg", **kwargs):
+        super().__init__(
+            message,
+            isolation_method=method,
+            user_message="Background removal failed. Using original image instead.",
+            **kwargs,
+        )
+
+
+class PersonDetectionError(ImageProcessingError):
+    """Person detection specific errors."""
+
+    def __init__(self, message: str, detection_method: str = "hog", **kwargs):
+        super().__init__(
+            f"Person detection failed using {detection_method}: {message}",
+            user_message="Unable to detect person in image. Please ensure the image contains a clear person.",
+            details={"detection_method": detection_method},
+            **kwargs,
+        )
+
+
+class ImageQualityError(ImageProcessingError):
+    """Image quality assessment errors."""
+
+    def __init__(self, message: str, quality_issues: list[str] = None, **kwargs):
+        super().__init__(
+            f"Image quality assessment failed: {message}",
+            user_message="Unable to assess image quality. The image may be corrupted or in an unsupported format.",
+            details={"quality_issues": quality_issues or []},
+            **kwargs,
+        )
+
+
+class ImageTimeoutError(ImageProcessingError):
+    """Image processing timeout errors."""
+    def __init__(self, operation: str, timeout_seconds: int, **kwargs):
+        message = f"Image {operation} timed out after {timeout_seconds} seconds"
+        kw = _filtered_kwargs(kwargs, "user_message", "details", "category", "severity")
+        super().__init__(message, **kw)
+        self.user_message = "Image processing is taking too long. Please try with a smaller image."
+        self.severity = ErrorSeverity.HIGH
+        self.details.update({"operation": operation, "timeout_seconds": timeout_seconds})
+class UnsupportedImageFormatError(ImageProcessingError):
+    """Unsupported image format errors."""
+
+    def __init__(self, format_detected: str, supported_formats: list[str], **kwargs):
+        super().__init__(
+            f"Unsupported image format: {format_detected}",
+            user_message=f"Please use a supported image format: {', '.join(supported_formats)}",
+            severity=ErrorSeverity.LOW,
+            details={"format_detected": format_detected, "supported_formats": supported_formats},
+            **kwargs,
+        )
+
+
+class ImageCorruptionError(ImageProcessingError):
+    """Image corruption or loading errors."""
+
+    def __init__(self, image_path: str, **kwargs):
+        super().__init__(
+            f"Image file is corrupted or cannot be loaded: {image_path}",
+            details={"image_path": image_path},
+            **kwargs,
+        )
+        self.user_message = "The image file appears to be corrupted. Please try uploading a different image."
+# Prerequisite Check Errors
+class PrerequisiteError(GITTEError):
+    """Base class for prerequisite check errors."""
+
+    def __init__(self, message: str, **kwargs):
+        # Defaults, aber Werte aus kwargs respektieren
+        user_message = kwargs.pop(
+            "user_message",
+            "System prerequisites are not met. Please check system requirements.",
+        )
+        category = kwargs.pop("category", ErrorCategory.SYSTEM)
+        severity = kwargs.pop("severity", ErrorSeverity.HIGH)
+        details = kwargs.pop("details", None)
+
+        super().__init__(
+            message,
+            user_message=user_message,
+            category=category,
+            severity=severity,
+            details=details,
+            **kwargs,  # hier sind die o.g. Keys bereits gepoppt
+        )
+
+
+class PrerequisiteCheckFailedError(PrerequisiteError):
+    """Prerequisite check execution failed."""
+
+    def __init__(self, checker_name: str, error_details: str, **kwargs):
+        kw = _filtered_kwargs(kwargs, "user_message", "details", "category", "severity")
+        super().__init__(
+            f"Prerequisite check failed for {checker_name}: {error_details}",
+            user_message=f"Unable to verify {checker_name}. Some features may be unavailable.",
+            details={"checker_name": checker_name, "error_details": error_details},
+            **kw,
+        )
+
+
+class RequiredPrerequisiteError(PrerequisiteError):
+    """Required prerequisite not met."""
+
+    def __init__(
+        self,
+        prerequisite_name: str,
+        resolution_steps: list[str] = None,
+        **kwargs,
+    ):
+        kw = _filtered_kwargs(kwargs, "user_message", "details", "category", "severity")
+        super().__init__(
+            f"Required prerequisite not met: {prerequisite_name}",
+            user_message=f"Please resolve the {prerequisite_name} requirement to continue.",
+            severity=ErrorSeverity.CRITICAL,
+            details={
+                "prerequisite_name": prerequisite_name,
+                "resolution_steps": resolution_steps or [],
+            },
+            **kw,
+        )
+
+
+class ServiceUnavailableError(PrerequisiteError):
+    """External service unavailable."""
+
+    def __init__(self, service_name: str, connection_details: str = "", **kwargs):
+        kw = _filtered_kwargs(kwargs, "user_message", "details", "category", "severity")
+        super().__init__(
+            f"Service unavailable: {service_name}",
+            user_message=f"The {service_name} service is currently unavailable. Please try again later.",
+            category=ErrorCategory.EXTERNAL_SERVICE,
+            details={"service_name": service_name, "connection_details": connection_details},
+            **kw,
+        )
+
+
+# Tooltip System Errors
+class TooltipError(GITTEError):
+    """Base class for tooltip system errors."""
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message,
+            user_message="Help system temporarily unavailable.",
+            category=ErrorCategory.SYSTEM,
+            severity=ErrorSeverity.LOW,
+            **kwargs,
+        )
+
+
+# Batch Processing Errors
+class BatchProcessingError(GITTEError):
+    """Batch image processing errors."""
+
+    def __init__(
+        self,
+        message: str,
+        failed_images: list[str] = None,
+        total_images: int = 0,
+        **kwargs,
+    ):
+        super().__init__(
+            f"Batch processing failed: {message}",
+            user_message="Multiple images failed processing. Please check individual images.",
+            category=ErrorCategory.EXTERNAL_SERVICE,
+            severity=ErrorSeverity.HIGH,
+            details={
+                "failed_images": failed_images or [],
+                "total_images": total_images,
+                "failure_rate": len(failed_images or []) / max(1, total_images),
+            },
+            **kwargs,
+        )
+
+
+class CircuitBreakerOpenError(ExternalServiceError):
+    """Circuit breaker is open for service."""
+
+    def __init__(
+        self,
+        service_name: str,
+        failure_count: int,
+        recovery_time_seconds: int,
+        **kwargs,
+    ):
+        super().__init__(
+            service_name,
+            f"Circuit breaker is open after {failure_count} failures. Recovery in {recovery_time_seconds}s.",
+            user_message=f"The {service_name} service is temporarily unavailable due to repeated failures. Please try again in {recovery_time_seconds} seconds.",
+            severity=ErrorSeverity.HIGH,
+            details={
+                "failure_count": failure_count,
+                "recovery_time_seconds": recovery_time_seconds,
+                "circuit_state": "open",
+            },
+            **kwargs,
+        )
+
+
+class RetryExhaustedError(GITTEError):
+    """All retry attempts exhausted."""
+
+    def __init__(
+        self,
+        operation: str,
+        max_retries: int,
+        last_error: str,
+        **kwargs,
+    ):
+        super().__init__(
+            f"Operation {operation} failed after {max_retries} retries. Last error: {last_error}",
+            user_message=f"Unable to complete {operation} after multiple attempts. Please try again later.",
+            category=ErrorCategory.EXTERNAL_SERVICE,
+            severity=ErrorSeverity.HIGH,
+            details={
+                "operation": operation,
+                "max_retries": max_retries,
+                "last_error": last_error,
+            },
+            **kwargs,
+        )
+
+
+# === PALD Exceptions & Recovery (merged) ===
+# This section integrates PALD-specific exceptions while reusing the project's ErrorSeverity enum.
+# It is self-contained and does not redefine ErrorSeverity.
+
+
+class RecoveryStrategy(Enum):
+    """Recovery strategies for error handling."""
+
+    RETRY = "retry"
+    FALLBACK_TO_DEFAULT = "fallback_to_default"
+    DEFER = "defer"
+    NOOP = "noop"
+
+
+@dataclass
+class RecoveryResult:
+    """Result of a recovery operation."""
+
+    success: bool
+    strategy_used: RecoveryStrategy
+    fallback_value: Any | None = None
+    error_message: str | None = None
+
+
+class PALDBaseException(Exception):
+    """Base exception for all PALD-related errors."""
+
+    def __init__(
+        self,
+        message: str,
+        severity: ErrorSeverity = ErrorSeverity.MEDIUM,
+        recovery_strategy: RecoveryStrategy = RecoveryStrategy.NOOP,
+        context: dict[str, Any] | None = None,
+    ):
+        super().__init__(message)
+        self.severity = severity
+        self.recovery_strategy = recovery_strategy
+        self.context = context or {}
+
+
+class PALDValidationError(PALDBaseException):
+    """Validation errors in PALD processing."""
+
+    def __init__(self, message: str, field: str | None = None, **kwargs):
+        super().__init__(message, severity=ErrorSeverity.MEDIUM, **kwargs)
+        self.field = field
+
+
+class PALDProcessingError(PALDBaseException):
+    """Processing errors during PALD operations."""
+
+    def __init__(self, message: str, operation: str | None = None, **kwargs):
+        super().__init__(message, severity=ErrorSeverity.HIGH, **kwargs)
+        self.operation = operation
+
+
+class PALDResourceError(PALDBaseException):
+    """Resource-related errors (memory, disk, network)."""
+
+    def __init__(self, message: str, resource_type: str | None = None, **kwargs):
+        super().__init__(
+            message,
+            severity=ErrorSeverity.HIGH,
+            recovery_strategy=RecoveryStrategy.RETRY,
+            **kwargs,
+        )
+        self.resource_type = resource_type
+
+
+class PALDConfigurationError(PALDBaseException):
+    """Configuration and setup errors."""
+
+    def __init__(self, message: str, config_key: str | None = None, **kwargs):
+        super().__init__(message, severity=ErrorSeverity.CRITICAL, **kwargs)
+        self.config_key = config_key
+
+
+class BiasAnalysisError(PALDBaseException):
+    """Bias analysis specific errors."""
+
+    def __init__(self, message: str, analysis_type: str | None = None, **kwargs):
+        super().__init__(
+            message,
+            severity=ErrorSeverity.MEDIUM,
+            recovery_strategy=RecoveryStrategy.FALLBACK_TO_DEFAULT,
+            **kwargs,
+        )
+        self.analysis_type = analysis_type
+
+
+class SchemaEvolutionError(PALDBaseException):
+    """Schema evolution and migration errors."""
+
+    def __init__(self, message: str, schema_version: str | None = None, **kwargs):
+        super().__init__(
+            message,
+            severity=ErrorSeverity.HIGH,
+            recovery_strategy=RecoveryStrategy.DEFER,
+            **kwargs,
+        )
+        self.schema_version = schema_version
+
+
+class RecoveryManager:
+    """Manages error recovery strategies with graceful degradation."""
+
+    @staticmethod
+    def execute_recovery(error: PALDBaseException, fallback_value: Any = None) -> RecoveryResult:
+        """Execute recovery strategy based on error type and configuration."""
+        strategy = error.recovery_strategy
+
+        if strategy == RecoveryStrategy.RETRY:
+            # In a real implementation, this would include retry logic
+            return RecoveryResult(
+                success=False,
+                strategy_used=strategy,
+                error_message="Retry not implemented in this context",
+            )
+
+        if strategy == RecoveryStrategy.FALLBACK_TO_DEFAULT:
+            return RecoveryResult(
+                success=True,
+                strategy_used=strategy,
+                fallback_value=fallback_value,
+            )
+
+        if strategy == RecoveryStrategy.DEFER:
+            return RecoveryResult(success=True, strategy_used=strategy)
+
+        # NOOP default
+        return RecoveryResult(success=False, strategy_used=strategy)

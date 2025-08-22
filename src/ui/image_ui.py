@@ -32,7 +32,7 @@ class ImageGenerationUI:
         self, user_id: UUID, embodiment_data: dict[str, Any] | None = None
     ) -> str | None:
         """
-        Render the main image generation interface.
+        Render the main image generation interface with enhanced accessibility.
 
         Args:
             user_id: User identifier
@@ -45,7 +45,21 @@ class ImageGenerationUI:
         if not self._check_image_consent(user_id):
             return None
 
+        # Add semantic structure for screen readers
+        st.markdown('<main role="main" id="main-content">', unsafe_allow_html=True)
+        
         st.title(get_text("image_generation_title"))
+        
+        # Add description for screen readers
+        st.markdown(
+            """
+            <div class="sr-only">
+                Image generation interface. Create visual representations of your personalized learning assistant.
+                You can generate images from your embodiment design, use custom prompts, or create variations.
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
         st.write(
             """
@@ -53,20 +67,53 @@ class ImageGenerationUI:
         You can use your embodiment design or create custom prompts.
         """
         )
+        
+        # Add accessibility notice
+        st.info(
+            "🔍 **Accessibility Note:** All generated images will include alternative text descriptions. "
+            "If you have visual impairments, the system will provide detailed descriptions of generated avatars."
+        )
 
-        # Generation options
+        # Generation options with enhanced accessibility
+        st.markdown("### 🎨 Generation Options")
+        
         generation_mode = st.radio(
             "Generation Mode",
             options=["From Embodiment Design", "Custom Prompt", "Variations"],
-            help="Choose how you want to generate your avatar",
+            help="Choose how you want to generate your avatar. Each option provides different ways to create your learning assistant's visual representation.",
+            key="generation_mode_radio"
+        )
+        
+        # Add descriptions for each mode
+        mode_descriptions = {
+            "From Embodiment Design": "Use your previously designed embodiment characteristics to automatically generate an avatar that matches your learning assistant's personality and style.",
+            "Custom Prompt": "Write a detailed description of how you want your avatar to look. This gives you full creative control over the appearance.",
+            "Variations": "Create multiple versions based on an existing image, exploring different styles, expressions, or characteristics."
+        }
+        
+        st.markdown(
+            f"""
+            <div class="generation-mode-description" role="region" aria-label="Selected mode description">
+                <p><strong>Selected:</strong> {generation_mode}</p>
+                <p>{mode_descriptions[generation_mode]}</p>
+            </div>
+            """,
+            unsafe_allow_html=True
         )
 
+        # Render the selected generation mode
+        result = None
         if generation_mode == "From Embodiment Design":
-            return self._render_embodiment_generation(user_id, embodiment_data)
+            result = self._render_embodiment_generation(user_id, embodiment_data)
         elif generation_mode == "Custom Prompt":
-            return self._render_custom_prompt_generation(user_id)
+            result = self._render_custom_prompt_generation(user_id)
         else:  # Variations
-            return self._render_variation_generation(user_id)
+            result = self._render_variation_generation(user_id)
+        
+        # Close main content area
+        st.markdown('</main>', unsafe_allow_html=True)
+        
+        return result
 
     def render_image_gallery(self, user_id: UUID) -> None:
         """
@@ -715,3 +762,40 @@ def render_image_customization(user_id: UUID, base_image_path: str) -> str | Non
 def render_batch_generation(user_id: UUID, embodiment_data: dict[str, Any]) -> list[str]:
     """Render batch generation interface."""
     return image_ui.render_batch_generation(user_id, embodiment_data)
+
+# === Task 9: Minimal image rendering helpers (append-only) ====================
+from pathlib import Path
+from typing import Optional, Sequence, Union
+
+def display_image(image_path: Union[str, Path], caption: Optional[str] = None, width: Optional[int] = None) -> None:
+    """Display a single image. UI-only; no business logic."""
+    try:
+        import streamlit as st  # guarded
+    except Exception:
+        return
+    try:
+        st.image(str(image_path), caption=caption, width=width)
+    except Exception as e:  # pragma: no cover
+        # Use the module-level logger if available
+        try:
+            logger.error("display_image_failed path=%s error=%s", image_path, e)
+        except Exception:
+            pass
+
+def display_thumbnail_grid(images: Sequence[Union[str, Path]], cols: int = 3, max_items: Optional[int] = None) -> None:
+    """Display thumbnails in a simple grid. UI-only; no business logic."""
+    try:
+        import streamlit as st  # guarded
+    except Exception:
+        return
+
+    items = list(images) if images is not None else []
+    if max_items is not None:
+        items = items[:max_items]
+
+    cols = max(1, int(cols))
+    st_cols = st.columns(cols)
+    for idx, p in enumerate(items):
+        with st_cols[idx % cols]:
+            st.image(str(p))
+# === End Task 9 append-only ===================================================

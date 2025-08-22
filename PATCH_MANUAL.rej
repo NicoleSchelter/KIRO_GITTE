@@ -1,0 +1,639 @@
+# ==== MANUAL PATCH START ====
+diff --git a/src/utils/ux_error_handler.py b/src/utils/ux_error_handler.py
+index 0000000..0000000 100644
+--- a/src/utils/ux_error_handler.py
++++ b/src/utils/ux_error_handler.py
+@@ -1,455 +1,144 @@
+-"""Error Monitoring Service for GITTE UX enhancements.
+-Provides real-time error monitoring, alerting, and health checks.
+-This module lives in `src/services/error_monitoring_service.py`.
+-It only imports from the logic/service layers and never from UI modules.
+-"""
+-
+-from __future__ import annotations
+-
+-import logging
+-import time
+-from collections import defaultdict, deque
+-from dataclasses import dataclass
+-from datetime import datetime, timedelta
+-from enum import Enum
+-from typing import Any, Callable, Deque, Dict, List, Optional, Tuple, Type
+-
+-logger = logging.getLogger(__name__)
+-
+-# Import resolution: prefer absolute `src.*` imports, then relative fallbacks.
+-# If both fail (e.g. during isolated tests), provide safe no-op fallbacks so
+-# this module can still load and be type-checked.
+-try:
+-    from src.utils.circuit_breaker import (
+-        get_all_circuit_breaker_stats,
+-        get_unhealthy_services,
+-    )
+-except Exception:  # pragma: no cover
+-    try:
+-        from ..utils.circuit_breaker import (  # type: ignore
+-            get_all_circuit_breaker_stats,
+-            get_unhealthy_services,
+-        )
+-    except Exception:
+-        def get_all_circuit_breaker_stats() -> Dict[str, Dict[str, Any]]:
+-            """Fallback: no circuit breaker metrics available."""
+-            return {}
+-        def get_unhealthy_services() -> List[str]:
+-            """Fallback: assume no unhealthy services."""
+-            return []
+-
+-try:
+-    from src.utils.error_handler import get_error_stats, get_recent_errors
+-except Exception:  # pragma: no cover
+-    try:
+-        from ..utils.error_handler import get_error_stats, get_recent_errors  # type: ignore
+-    except Exception:
+-        def get_error_stats() -> Dict[str, Any]:
+-            """Fallback: minimal error stats."""
+-            return {"total_errors": 0}
+-        def get_recent_errors(limit: int = 10) -> List[Dict[str, Any]]:
+-            """Fallback: no recent errors."""
+-            return []
+-
+-try:
+-    # ⚠️ Achtung: Nicht dieses Modul selbst importieren!
+-    # Entweder Datei nach src/services/error_monitoring_service.py verschieben
+-    # und eine separate utils/ux_error_handler.py mit get_ux_error_stats bereitstellen,
+-    # oder den Modulnamen hier auf ux_error_metrics ändern.
+-    from src.utils.ux_error_handler import get_ux_error_stats
+-except Exception:  # pragma: no cover
+-    try:
+-        from ..utils.ux_error_handler import get_ux_error_stats  # type: ignore
+-    except Exception:
+-        def get_ux_error_stats() -> Dict[str, Any]:
+-            """Fallback: minimal UX error stats."""
+-            return {"total_failures": 0}
+-
+-import random
+-from uuid import uuid4
+-try:
+-    # Optional: pull defaults from central config to keep things DRY
+-    # bevorzugt zentrale Config (ADR-004/Z-007)
+-    from src.config import RETRY_DEFAULTS
+-except Exception:
+-    RETRY_DEFAULTS = {
+-        "max_retries": 3,
+-        "initial_backoff": 0.5,
+-        "max_backoff": 8.0,
+-        "jitter": 0.1,
+-        "retry_on": (Exception,),  # broad by default, narrow down in callers
+-    }
+-
+-
+-@dataclass(frozen=True)
+-class RetryConfig:
+-    """Configuration for retry/backoff logic."""
+-    max_retries: int = RETRY_DEFAULTS["max_retries"]
+-    initial_backoff: float = RETRY_DEFAULTS["initial_backoff"]
+-    max_backoff: float = RETRY_DEFAULTS["max_backoff"]
+-    jitter: float = RETRY_DEFAULTS["jitter"]
+-    retry_on: Tuple[Type[BaseException], ...] = RETRY_DEFAULTS["retry_on"]
+-
+-
+-def retry_call(fn: Callable[..., Any], *args: Any, cfg: RetryConfig | None = None, **kwargs: Any) -> Any:
+-    """
+-    Execute `fn` with exponential backoff.
+-    Keep it small and dependency-free for use across layers.
+-
+-    NOTE: Callers in Service/Logic layers should pass a narrower `retry_on`.
+-    """
+-    cfg = cfg or RetryConfig()
+-    attempt = 0
+-    backoff = cfg.initial_backoff
+-
+-    while True:
+-        try:
+-            return fn(*args, **kwargs)
+-        except cfg.retry_on as exc:  # type: ignore[misc]
+-            attempt += 1
+-            if attempt > cfg.max_retries:
+-                # Preserve original exception after final attempt
+-                raise
+-            # add jitter to avoid thundering herds
+-            sleep_for = min(backoff, cfg.max_backoff) + random.uniform(0, cfg.jitter)
+-            # Debug-style logging without depending on a concrete logger here
+-            logger.debug("retry_call attempt=%d sleep=%.2fs exc=%s", attempt, sleep_for, type(exc).__name__)
+-            time.sleep(sleep_for)
+-            backoff *= 2
+-
+-
+-# Entweder konsequent pflegen oder entfernen:
+-__all__ = ["RetryConfig", "retry_call",
+-           "AlertSeverity", "Alert", "HealthMetrics", "MonitoringConfig",
+-           "ErrorMonitoringService",
+-           "get_system_health", "record_error_for_monitoring", "get_active_alerts",
+-           "resolve_alert", "get_monitoring_summary", "register_alert_callback"]
+-
+-class AlertSeverity(Enum):
+-    """Alert severity levels."""
+-    INFO = "info"
+-    WARNING = "warning"
+-    ERROR = "error"
+-    CRITICAL = "critical"
+-
+-@dataclass
+-class Alert:
+-    """System alert information."""
+-    id: str
+-    severity: AlertSeverity
+-    title: str
+-    message: str
+-    timestamp: datetime
+-    component: str
+-    resolved: bool = False
+-    resolution_time: Optional[datetime] = None
+-    metadata: Dict[str, Any] | None = None
+-
+-@dataclass
+-class HealthMetrics:
+-    """System health metrics."""
+-    overall_health: float  # 0.0 to 1.0
+-    error_rate: float
+-    circuit_breaker_health: float
+-    resource_health: float
+-    processing_health: float
+-    timestamp: datetime
+-    alerts_count: int
+-    critical_alerts_count: int
+-
+-@dataclass
+-class MonitoringConfig:
+-    """Configuration for error monitoring.
+-
+-    NOTE: To keep configuration DRY and centralized, you *can* move these
+-    fields into `src/config.py` and import here. Keeping them local works too.
+-    """
+-    error_rate_threshold: float = 0.10
+-    critical_error_threshold: int = 5
+-    monitoring_window_minutes: int = 15
+-    alert_cooldown_minutes: int = 5
+-    max_alerts_stored: int = 100
+-    enable_resource_monitoring: bool = True
+-    enable_circuit_breaker_monitoring: bool = True
+-
+-class ErrorMonitoringService:
+-    """Service for monitoring system errors and health."""
+-
+-    def __init__(self, config: MonitoringConfig | None = None):
+-        """Initialize error monitoring service."""
+-        self.config = config or MonitoringConfig()
+-        self.alerts: Deque[Alert] = deque(maxlen=self.config.max_alerts_stored)
+-        self.alert_history: Dict[str, datetime] = {}
+-        self.metrics_history: Deque[HealthMetrics] = deque(maxlen=100)
+-        self.alert_callbacks: List[Callable[[Alert], None]] = []
+-        self.error_counts: Dict[str, int] = defaultdict(int)
+-        self.error_timestamps: Dict[str, List[datetime]] = defaultdict(list)
+-        logger.info("Error monitoring service initialized")
+-
+-    def register_alert_callback(self, callback: Callable[[Alert], None]) -> None:
+-        """Register a callback function for alert notifications."""
+-        self.alert_callbacks.append(callback)
+-        try:
+-            cb_name = getattr(callback, "__name__", repr(callback))
+-            logger.info("Registered alert callback: %s", cb_name)
+-        except Exception:
+-            pass
+-
+-    def check_system_health(self) -> HealthMetrics:
+-        """Perform a comprehensive system health check."""
+-        timestamp = datetime.now()
+-        error_stats = get_error_stats()
+-        ux_error_stats = get_ux_error_stats()
+-        recent_errors = len(get_recent_errors(10))
+-        error_rate = self._calculate_error_rate(recent_errors)
+-        circuit_breaker_health = self._assess_circuit_breaker_health()
+-        resource_health = self._assess_resource_health()
+-        processing_health = self._assess_processing_health(ux_error_stats)
+-        overall_health = max(0.0, min(1.0, (
+-            circuit_breaker_health * 0.3
+-            + resource_health * 0.3
+-            + processing_health * 0.4
+-        )))
+-        active_alerts = [a for a in self.alerts if not a.resolved]
+-        critical_alerts = [a for a in active_alerts if a.severity is AlertSeverity.CRITICAL]
+-        metrics = HealthMetrics(
+-            overall_health=overall_health,
+-            error_rate=error_rate,
+-            circuit_breaker_health=circuit_breaker_health,
+-            resource_health=resource_health,
+-            processing_health=processing_health,
+-            timestamp=timestamp,
+-            alerts_count=len(active_alerts),
+-            critical_alerts_count=len(critical_alerts),
+-        )
+-        self.metrics_history.append(metrics)
+-        self._check_alert_conditions(metrics)
+-        return metrics
+-
+-    def record_error(self, error_type: str, component: str = "unknown") -> None:
+-        """Record an error occurrence for monitoring."""
+-        now = datetime.now()
+-        self.error_counts[error_type] += 1
+-        self.error_timestamps[error_type].append(now)
+-        cutoff = now - timedelta(minutes=self.config.monitoring_window_minutes)
+-        self.error_timestamps[error_type] = [ts for ts in self.error_timestamps[error_type] if ts > cutoff]
+-        recent_count = len(self.error_timestamps[error_type])
+-        if recent_count >= self.config.critical_error_threshold:
+-            self._raise_alert(
+-                AlertSeverity.ERROR,
+-                f"High error rate for {error_type}",
+-                f"Detected {recent_count} {error_type} errors in the last {self.config.monitoring_window_minutes} minutes",
+-                component,
+-            )
+-
+-    def _calculate_error_rate(self, recent_errors: int) -> float:
+-        """Return heuristic error-rate in [0..1] based on recent errors."""
+-        if recent_errors <= 0:
+-            return 0.0
+-        if recent_errors <= 2:
+-            return 0.05
+-        if recent_errors <= 5:
+-            return 0.15
+-        return min(0.50, recent_errors * 0.05)
+-
+-    def _assess_circuit_breaker_health(self) -> float:
+-        """Assess circuit breaker health (0.0 .. 1.0)."""
+-        if not self.config.enable_circuit_breaker_monitoring:
+-            return 1.0
+-        try:
+-            cb_stats = get_all_circuit_breaker_stats() or {}
+-            unhealthy = set(get_unhealthy_services() or [])
+-            if not cb_stats:
+-                return 1.0
+-            total = len(cb_stats)
+-            healthy = total - len(unhealthy)
+-            health_score = healthy / total if total > 0 else 1.0
+-            if unhealthy:
+-                self._raise_alert(
+-                    AlertSeverity.WARNING,
+-                    "Circuit breakers open",
+-                    f"Services with open circuit breakers: {', '.join(sorted(unhealthy))}",
+-                    "circuit_breaker",
+-                )
+-            return health_score
+-        except Exception as exc:
+-            logger.warning("Failed to assess circuit breaker health: %s", exc)
+-            return 0.8
+-
+-    def _assess_resource_health(self) -> float:
+-        """Assess system resource health (0.0 .. 1.0)."""
+-        if not self.config.enable_resource_monitoring:
+-            return 1.0
+-        try:
+-            import psutil
+-            memory = psutil.virtual_memory()
+-            mem_health = max(0.0, 1.0 - (memory.percent / 100.0))
+-            disk = psutil.disk_usage("/")
+-            disk_percent = (disk.used / disk.total) * 100.0
+-            disk_health = max(0.0, 1.0 - (disk_percent / 100.0))
+-            cpu_percent = psutil.cpu_percent(interval=0.1)
+-            cpu_health = max(0.0, 1.0 - (cpu_percent / 100.0))
+-            resource_health = (mem_health * 0.4) + (disk_health * 0.3) + (cpu_health * 0.3)
+-            if memory.percent > 90:
+-                self._raise_alert(AlertSeverity.CRITICAL, "High memory usage", f"Memory usage at {memory.percent:.1f}%", "system_resources")
+-            if disk_percent > 90:
+-                self._raise_alert(AlertSeverity.CRITICAL, "Low disk space", f"Disk usage at {disk_percent:.1f}%", "system_resources")
+-            if cpu_percent > 95:
+-                self._raise_alert(AlertSeverity.WARNING, "High CPU usage", f"CPU usage at {cpu_percent:.1f}%", "system_resources")
+-            return resource_health
+-        except ImportError:
+-            logger.warning("psutil not available for resource monitoring")
+-            return 1.0
+-        except Exception as exc:
+-            logger.warning("Failed to assess resource health: %s", exc)
+-            return 0.8
+-
+-    def _assess_processing_health(self, ux_error_stats: Dict[str, Any]) -> float:
+-        """Assess UX processing health (0.0 .. 1.0)."""
+-        try:
+-            total_failures = int(ux_error_stats.get("total_failures", 0))
+-            if total_failures == 0:
+-                return 1.0
+-            image_failures = int(ux_error_stats.get("image_processing_failures", 0))
+-            prerequisite_failures = int(ux_error_stats.get("prerequisite_failures", 0))
+-            retry_exhaustions = int(ux_error_stats.get("retry_exhaustions", 0))
+-            weighted = (image_failures * 0.4) + (prerequisite_failures * 0.3) + (retry_exhaustions * 0.3)
+-            if weighted <= 5:
+-                score = 1.0 - (weighted * 0.1)
+-            else:
+-                score = max(0.0, 0.5 - ((weighted - 5) * 0.05))
+-            if total_failures > 10:
+-                self._raise_alert(AlertSeverity.WARNING, "High processing failure rate", f"Total UX processing failures: {total_failures}", "ux_processing")
+-            return max(0.0, score)
+-        except Exception as exc:
+-            logger.warning("Failed to assess processing health: %s", exc)
+-            return 0.8
+-
+-    def _check_alert_conditions(self, metrics: HealthMetrics) -> None:
+-        """Trigger alerts based on current metrics."""
+-        if metrics.overall_health < 0.5:
+-            self._raise_alert(AlertSeverity.CRITICAL, "System health critical", f"Overall system health at {metrics.overall_health:.1%}", "system_health")
+-        elif metrics.overall_health < 0.7:
+-            self._raise_alert(AlertSeverity.WARNING, "System health degraded", f"Overall system health at {metrics.overall_health:.1%}", "system_health")
+-        if metrics.error_rate > self.config.error_rate_threshold:
+-            self._raise_alert(AlertSeverity.ERROR, "High error rate", f"Error rate at {metrics.error_rate:.1%} (threshold: {self.config.error_rate_threshold:.1%})", "error_rate")
+-
+-    def _raise_alert(self, severity: AlertSeverity, title: str, message: str, component: str, metadata: Dict[str, Any] | None = None) -> None:
+-        """Create, log and dispatch an alert."""
+-        alert_key = f"{component}:{title}"
+-        now = datetime.now()
+-        last = self.alert_history.get(alert_key)
+-        if last and (now - last) < timedelta(minutes=self.config.alert_cooldown_minutes):
+-            return
+-        alert = Alert(
+-            id=f"{int(time.time())}_{uuid4().hex}_{component}_{severity.value}",
+-            severity=severity,
+-            title=title,
+-            message=message,
+-            timestamp=now,
+-            component=component,
+-            metadata=metadata or {},
+-        )
+-        self.alerts.append(alert)
+-        self.alert_history[alert_key] = now
+-        log_level = {
+-            AlertSeverity.INFO: logging.INFO,
+-            AlertSeverity.WARNING: logging.WARNING,
+-            AlertSeverity.ERROR: logging.ERROR,
+-            AlertSeverity.CRITICAL: logging.CRITICAL,
+-        }[severity]
+-        logger.log(log_level, "ALERT [%s] %s: %s", severity.value.upper(), title, message)
+-        for cb in list(self.alert_callbacks):
+-            try:
+-                cb(alert)
+-            except Exception as exc:
+-                logger.error("Alert callback failed: %s", exc)
+-
+-    def resolve_alert(self, alert_id: str) -> bool:
+-        """Mark an alert as resolved; returns True if it was found."""
+-        for alert in self.alerts:
+-            if alert.id == alert_id and not alert.resolved:
+-                alert.resolved = True
+-                alert.resolution_time = datetime.now()
+-                logger.info("Alert resolved: %s", alert.title)
+-                return True
+-        return False
+-
+-    def get_active_alerts(self, severity: AlertSeverity | None = None) -> List[Alert]:
+-        """Return active (unresolved) alerts, optionally filtered by severity."""
+-        active = [a for a in self.alerts if not a.resolved]
+-        if severity is not None:
+-            active = [a for a in active if a.severity is severity]
+-        return sorted(active, key=lambda a: a.timestamp, reverse=True)
+-
+-    def get_alert_history(self, hours: int = 24) -> List[Alert]:
+-        """Return alerts in the last `hours`."""
+-        cutoff = datetime.now() - timedelta(hours=hours)
+-        return [a for a in self.alerts if a.timestamp > cutoff]
+-
+-    def get_health_trend(self, hours: int = 6) -> List[HealthMetrics]:
+-        """Return health metrics in the last `hours`."""
+-        cutoff = datetime.now() - timedelta(hours=hours)
+-        return [m for m in self.metrics_history if m.timestamp > cutoff]
+-
+-    def get_monitoring_summary(self) -> Dict[str, Any]:
+-        """Return a comprehensive monitoring summary."""
+-        current = self.check_system_health()
+-        active = self.get_active_alerts()
+-        recent = self.get_alert_history(24)
+-        return {
+-            "current_health": {
+-                "overall_health": current.overall_health,
+-                "error_rate": current.error_rate,
+-                "circuit_breaker_health": current.circuit_breaker_health,
+-                "resource_health": current.resource_health,
+-                "processing_health": current.processing_health,
+-                "timestamp": current.timestamp.isoformat(),
+-            },
+-            "alerts": {
+-                "active_count": len(active),
+-                "critical_count": current.critical_alerts_count,
+-                "recent_24h_count": len(recent),
+-                "active_alerts": [
+-                    {
+-                        "id": a.id,
+-                        "severity": a.severity.value,
+-                        "title": a.title,
+-                        "message": a.message,
+-                        "component": a.component,
+-                        "timestamp": a.timestamp.isoformat(),
+-                    }
+-                    for a in active[:10]
+-                ],
+-            },
+-            "error_tracking": {
+-                "total_error_types": len(self.error_counts),
+-                "most_common_errors": sorted(self.error_counts.items(), key=lambda x: x[1], reverse=True)[:5],
+-            },
+-            "monitoring_config": {
+-                "error_rate_threshold": self.config.error_rate_threshold,
+-                "monitoring_window_minutes": self.config.monitoring_window_minutes,
+-                "alert_cooldown_minutes": self.config.alert_cooldown_minutes,
+-            },
+-        }
+-
+-# Global instance + helpers for backward compatibility
+-error_monitoring_service = ErrorMonitoringService()
+-
+-def get_system_health() -> HealthMetrics:
+-    return error_monitoring_service.check_system_health()
+-
+-def record_error_for_monitoring(error_type: str, component: str = "unknown") -> None:
+-    error_monitoring_service.record_error(error_type, component)
+-
+-def get_active_alerts(severity: AlertSeverity | None = None) -> List[Alert]:
+-    return error_monitoring_service.get_active_alerts(severity)
+-
+-def resolve_alert(alert_id: str) -> bool:
+-    return error_monitoring_service.resolve_alert(alert_id)
+-
+-def get_monitoring_summary() -> Dict[str, Any]:
+-    return error_monitoring_service.get_monitoring_summary()
+-
+-def register_alert_callback(callback: Callable[[Alert], None]) -> None:
+-    error_monitoring_service.register_alert_callback(callback)
++"""UX error utilities for GITTE.
++
++- Provides lightweight counters and helpers to track UX-related failures.
++- Exposes `get_ux_error_stats()` consumed by the monitoring service.
++- Provides a tiny, dependency-free `retry_call` utility (with `RetryConfig`).
++- **Layering:** This module lives in `src/utils/ux_error_handler.py` (utils layer).
++  It MUST NOT import from UI modules. Services/Logic may import from here.
++
++Keep this module small and side-effect free.
++"""
++
++from __future__ import annotations
++
++import logging
++import random
++import threading
++import time
++from collections import Counter, deque
++from dataclasses import dataclass
++from datetime import datetime
++from typing import Any, Deque, Dict, Optional, Tuple, Type, Callable
++
++logger = logging.getLogger(__name__)
++
++# -----------------------------------------------------------------------------
++# Centralized retry defaults (ADR-004 / Z-007)
++# Prefer config.config.RETRY_DEFAULTS; fall back to src.config or baked-in defaults.
++# -----------------------------------------------------------------------------
++try:
++    # recommended location
++    from config.config import RETRY_DEFAULTS  # type: ignore
++except Exception:
++    try:
++        # legacy location
++        from src.config import RETRY_DEFAULTS  # type: ignore
++    except Exception:
++        RETRY_DEFAULTS = {
++            "max_retries": 3,
++            "initial_backoff": 0.5,
++            "max_backoff": 8.0,
++            "jitter": 0.1,
++            "retry_on": (Exception,),  # narrow this in callers if possible
++        }
++
++# -----------------------------------------------------------------------------
++# Retry helpers
++# -----------------------------------------------------------------------------
++@dataclass(frozen=True)
++class RetryConfig:
++    """Configuration for retry/backoff logic."""
++    max_retries: int = RETRY_DEFAULTS["max_retries"]
++    initial_backoff: float = RETRY_DEFAULTS["initial_backoff"]
++    max_backoff: float = RETRY_DEFAULTS["max_backoff"]
++    jitter: float = RETRY_DEFAULTS["jitter"]
++    retry_on: Tuple[Type[BaseException], ...] = RETRY_DEFAULTS["retry_on"]  # type: ignore[assignment]
++
++
++def retry_call(fn: Callable[..., Any], *args: Any, cfg: Optional[RetryConfig] = None, **kwargs: Any) -> Any:
++    """Execute `fn(*args, **kwargs)` with exponential backoff.
++
++    - Keeps dependencies minimal to be safe across layers.
++    - Callers SHOULD pass a narrower `retry_on` tailored to the operation.
++    """
++    cfg = cfg or RetryConfig()
++    attempt = 0
++    backoff = cfg.initial_backoff
++
++    while True:
++        try:
++            return fn(*args, **kwargs)
++        except cfg.retry_on as exc:  # type: ignore[misc]
++            attempt += 1
++            if attempt > cfg.max_retries:
++                # Re-raise the original exception after exhausting retries
++                raise
++            # add jitter to avoid thundering herds
++            sleep_for = min(backoff, cfg.max_backoff) + random.uniform(0, cfg.jitter)
++            logger.debug("retry_call attempt=%d sleep=%.2fs exc=%s", attempt, sleep_for, type(exc).__name__)
++            time.sleep(sleep_for)
++            backoff *= 2
++
++
++# -----------------------------------------------------------------------------
++# Lightweight in-memory UX error tracking
++# -----------------------------------------------------------------------------
++# NOTE: This is NOT a replacement for structured logging or DB persistence.
++# It only provides a low-cost signal used by the monitoring service.
++_ux_error_counts: Counter[str] = Counter()
++_recent_ux_errors: Deque[Dict[str, Any]] = deque(maxlen=200)
++_lock = threading.Lock()
++
++
++def record_ux_error(kind: str, metadata: Optional[Dict[str, Any]] = None) -> None:
++    """Record a UX-related failure, e.g., 'image_processing', 'prerequisite', 'retry_exhaustion'.
++
++    Args:
++        kind: short key describing the failure type.
++        metadata: optional context for debugging (kept small).
++    """
++    ts = datetime.utcnow().isoformat()
++    payload = {"kind": kind, "ts": ts, "meta": (metadata or {})}
++
++    with _lock:
++        _ux_error_counts[kind] += 1
++        _ux_error_counts["total_failures"] += 1
++        _recent_ux_errors.append(payload)
++
++    logger.debug("Recorded UX error: %s", payload)
++
++
++def get_ux_error_stats() -> Dict[str, Any]:
++    """Return aggregated counters used by monitoring (no heavy computation)."""
++    with _lock:
++        # snapshot to avoid holding lock too long
++        counts = dict(_ux_error_counts)
++        recent = list(_recent_ux_errors)[-10:]
++
++    # Normalize keys expected by the monitoring service
++    return {
++        "total_failures": counts.get("total_failures", 0),
++        "image_processing_failures": counts.get("image_processing", 0),
++        "prerequisite_failures": counts.get("prerequisite", 0),
++        "retry_exhaustions": counts.get("retry_exhaustion", 0),
++        "by_type": {k: v for k, v in counts.items() if k != "total_failures"},
++        "recent": recent,
++    }
++
++
++def reset_ux_error_stats() -> None:
++    """Reset counters and recent buffer (primarily for tests)."""
++    with _lock:
++        _ux_error_counts.clear()
++        _recent_ux_errors.clear()
++
++
++__all__ = [
++    # retry
++    "RetryConfig",
++    "retry_call",
++    # ux counters
++    "record_ux_error",
++    "get_ux_error_stats",
++    "reset_ux_error_stats",
++]
+# ==== MANUAL PATCH END ====
+# ==== MANUAL PATCH START ====
+diff --git a/src/services/error_monitoring_service.py b/src/services/error_monitoring_service.py
+index 0000000..0000000 100644
+--- a/src/services/error_monitoring_service.py
++++ b/src/services/error_monitoring_service.py
+@@ -1,4 +1,7 @@
+-"""Error Monitoring Service for GITTE UX enhancements.
+-Provides error monitoring, alerting, resource & processing health checks,
+-and a unified API compatible with existing call sites.
+-"""
++"""Error Monitoring Service for GITTE.
++
++Service-layer component:
++- Aggregates health and error signals (circuit breakers, resources, UX counters).
++- Raises alerts with cooldowns; exposes a summary API.
++- Depends on utils-only functions (no UI imports).
++"""
+@@
+-from src.utils.ux_error_handler import get_ux_error_stats
++from src.utils.ux_error_handler import get_ux_error_stats  # utils: counters only
+@@
+-    # Public API
++    # Public API
+@@
+         return error_monitoring_service.get_active_alerts(severity)
++
++__all__ = [
++    "AlertSeverity", "Alert", "MonitoringConfig", "HealthMetrics",
++    "ErrorMonitoringService",
++    "get_system_health", "record_error_for_monitoring", "get_active_alerts",
++    "resolve_alert", "get_monitoring_summary", "register_alert_callback",
++]
+# ==== MANUAL PATCH END ====

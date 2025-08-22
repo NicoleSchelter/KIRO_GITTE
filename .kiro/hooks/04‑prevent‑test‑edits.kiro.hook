@@ -1,14 +1,16 @@
 {
   "enabled": true,
-  "name": "Prevent Test Edits",
-  "description": "Blocks commits that change tests without proper commit tag",
-  "version": "1",
-  "when": {
-    "type": "fileStaged",
-    "patterns": ["tests/**/*.py"]
-  },
+  "name": "Prevent Risky Test Edits",
+  "description": "Blocks edits to legacy tests unless tagged; allows contract/property/type tests",
+  "version": "2",
+  "when": { "type": "fileStaged", "patterns": ["tests/**/*.py"] },
   "then": {
     "type": "validateCommit",
+    "allowPaths": [
+      "tests/contracts/**",
+      "tests/properties/**",
+      "tests/types/**"
+    ],
     "requireInSubject": "[ALLOW-TEST-CHANGE]"
   }
 }

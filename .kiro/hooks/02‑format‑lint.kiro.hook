@@ -1,8 +1,8 @@
 {
   "enabled": true,
   "name": "Format & Lint",
-  "description": "Runs Ruff and Black to lint and format code",
-  "version": "1",
+  "description": "Ruff + Black with excludes",
+  "version": "2",
   "when": {
     "type": "fileEdited",
     "patterns": ["src/**/*.py", "tests/**/*.py", "pyproject.toml", "ruff.toml"]
@@ -12,7 +12,7 @@
     "shell": "bash",
     "commands": [
       "ruff check --fix .",
-      "black ."
+      "black --force-exclude '(build|dist|.venv|.kiro)' ."
     ]
   }
 }

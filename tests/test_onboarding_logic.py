@@ -34,17 +34,23 @@ class TestOnboardingLogic:
         return Mock()
 
     @pytest.fixture
-    def mock_pald_manager(self):
-        """Mock PALD manager."""
+    def mock_onboarding_service(self):
+        """Mock onboarding progress service."""
         return Mock()
 
     @pytest.fixture
-    def onboarding_logic(self, mock_user_repository, mock_consent_service, mock_pald_manager):
+    def mock_preferences_service(self):
+        """Mock user preferences service."""
+        return Mock()
+
+    @pytest.fixture
+    def onboarding_logic(self, mock_user_repository, mock_consent_service, mock_onboarding_service, mock_preferences_service):
         """Create OnboardingLogic instance with mocked dependencies."""
         return OnboardingLogic(
             user_repository=mock_user_repository,
             consent_service=mock_consent_service,
-            pald_manager=mock_pald_manager,
+            onboarding_service=mock_onboarding_service,
+            preferences_service=mock_preferences_service,
         )
 
     @pytest.fixture

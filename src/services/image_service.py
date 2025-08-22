@@ -19,6 +19,8 @@ from src.services.image_provider import (
     StableDiffusionProvider,
     Text2ImageProvider,
 )
+from src.services.image_isolation_service import ImageIsolationService, ImageIsolationConfig
+from src.services.image_quality_detector import ImageQualityDetector, QualityDetectionConfig
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +44,16 @@ class ImageService:
             "total_generation_time": 0.0,
             "failed_generations": 0,
             "average_generation_time": 0.0,
+            "isolation_operations": 0,
+            "isolation_successes": 0,
+            "quality_checks": 0,
+            "faulty_images_detected": 0,
         }
         self._health_status: bool | None = None
+        
+        # Initialize image isolation and quality detection services
+        self.isolation_service = self._create_isolation_service()
+        self.quality_detector = self._create_quality_detector()
 
     def _create_default_provider(self) -> Text2ImageProvider:
         """Create default image provider based on configuration."""
@@ -64,6 +74,48 @@ class ImageService:
                 logger.warning(f"Failed to initialize StableDiffusionProvider: {e}")
                 logger.info("Falling back to DummyImageProvider")
                 return DummyImageProvider()
+    
+    def _create_isolation_service(self) -> ImageIsolationService | None:
+        """Create image isolation service based on configuration."""
+        if not config.feature_flags.enable_image_isolation:
+            logger.info("Image isolation is disabled by feature flag")
+            return None
+        
+        try:
+            isolation_config = ImageIsolationConfig(
+                enabled=config.image_isolation.enabled,
+                detection_confidence_threshold=config.image_isolation.detection_confidence_threshold,
+                edge_refinement_enabled=config.image_isolation.edge_refinement_enabled,
+                background_removal_method=config.image_isolation.background_removal_method,
+                fallback_to_original=config.image_isolation.fallback_to_original,
+                max_processing_time=config.image_isolation.max_processing_time,
+                output_format=config.image_isolation.output_format,
+                uniform_background_color=config.image_isolation.uniform_background_color
+            )
+            return ImageIsolationService(isolation_config)
+        except Exception as e:
+            logger.warning(f"Failed to initialize ImageIsolationService: {e}")
+            return None
+    
+    def _create_quality_detector(self) -> ImageQualityDetector | None:
+        """Create image quality detector based on configuration."""
+        if not config.feature_flags.enable_image_quality_detection:
+            logger.info("Image quality detection is disabled by feature flag")
+            return None
+        
+        try:
+            quality_config = QualityDetectionConfig(
+                enabled=config.image_isolation.enabled,  # Use same flag as isolation
+                min_person_confidence=0.7,
+                max_people_allowed=1,
+                min_quality_score=0.6,
+                blur_threshold=0.3,
+                noise_threshold=0.1
+            )
+            return ImageQualityDetector(quality_config)
+        except Exception as e:
+            logger.warning(f"Failed to initialize ImageQualityDetector: {e}")
+            return None
 
     def generate_embodiment_image(
         self, prompt: str, user_id: UUID | None = None, parameters: dict[str, Any] | None = None
@@ -107,13 +159,16 @@ class ImageService:
             # Generate image
             result = self.provider.generate_image(request)
 
+            # Apply image processing pipeline (isolation and quality detection)
+            processed_result = self._process_generated_image(result, user_id)
+
             # Update performance metrics
             self._update_performance_metrics(result.generation_time or 0.0, success=True)
 
             logger.info(
-                f"Embodiment image generated successfully: {result.image_path}, time={result.generation_time:.2f}s"
+                f"Embodiment image generated successfully: {processed_result.image_path}, time={result.generation_time:.2f}s"
             )
-            return result
+            return processed_result
 
         except ImageProviderError as e:
             generation_time = time.time() - start_time
@@ -266,6 +321,8 @@ class ImageService:
                 "provider_type": type(self.provider).__name__,
                 "model_info": model_info,
                 "performance_metrics": self.get_performance_metrics(),
+                "isolation_service": self.get_isolation_service_status(),
+                "quality_detector": self.get_quality_detector_status(),
             }
 
             return status
@@ -306,6 +363,178 @@ class ImageService:
                 )
         else:
             self._performance_metrics["failed_generations"] += 1
+    
+    def _process_generated_image(self, result: ImageResult, user_id: UUID | None = None) -> ImageResult:
+        """
+        Process generated image through isolation and quality detection pipeline.
+        
+        Args:
+            result: Original image generation result
+            user_id: User ID for audit logging
+            
+        Returns:
+            ImageResult: Processed image result (may be original if processing fails)
+        """
+        if not result.image_path:
+            logger.warning("No image path in result, skipping processing")
+            return result
+        
+        processed_result = result
+        
+        # Step 1: Quality detection
+        if self.quality_detector:
+            try:
+                self._performance_metrics["quality_checks"] += 1
+                detection_result = self.quality_detector.detect_faulty_image(result.image_path)
+                
+                if detection_result.is_faulty:
+                    self._performance_metrics["faulty_images_detected"] += 1
+                    logger.warning(
+                        f"Faulty image detected: {result.image_path}, "
+                        f"reasons: {[r.value for r in detection_result.reasons]}, "
+                        f"confidence: {detection_result.confidence_score:.2f}"
+                    )
+                    
+                    # Add quality information to result metadata
+                    if not processed_result.metadata:
+                        processed_result.metadata = {}
+                    processed_result.metadata.update({
+                        "quality_check": {
+                            "is_faulty": detection_result.is_faulty,
+                            "reasons": [r.value for r in detection_result.reasons],
+                            "confidence_score": detection_result.confidence_score,
+                            "recommendations": detection_result.recommendations
+                        }
+                    })
+                else:
+                    logger.info(f"Image quality check passed: {result.image_path}")
+                    
+            except Exception as e:
+                logger.error(f"Quality detection failed for {result.image_path}: {e}")
+        
+        # Step 2: Image isolation (only if quality check passed or no quality detector)
+        should_isolate = True
+        if self.quality_detector and processed_result.metadata:
+            quality_check = processed_result.metadata.get("quality_check", {})
+            should_isolate = not quality_check.get("is_faulty", False)
+        
+        if should_isolate and self.isolation_service:
+            try:
+                self._performance_metrics["isolation_operations"] += 1
+                isolation_result = self.isolation_service.isolate_person(result.image_path)
+                
+                if isolation_result.success and isolation_result.isolated_image_path:
+                    self._performance_metrics["isolation_successes"] += 1
+                    
+                    # Update result with isolated image
+                    processed_result = ImageResult(
+                        image_path=isolation_result.isolated_image_path,
+                        generation_time=result.generation_time,
+                        metadata={
+                            **(processed_result.metadata or {}),
+                            "isolation": {
+                                "success": True,
+                                "original_path": result.image_path,
+                                "method_used": isolation_result.method_used,
+                                "confidence_score": isolation_result.confidence_score,
+                                "processing_time": isolation_result.processing_time
+                            }
+                        }
+                    )
+                    
+                    logger.info(
+                        f"Image isolation successful: {isolation_result.isolated_image_path}, "
+                        f"method: {isolation_result.method_used}, "
+                        f"confidence: {isolation_result.confidence_score:.2f}"
+                    )
+                else:
+                    logger.warning(
+                        f"Image isolation failed: {isolation_result.error_message}, "
+                        f"using original image: {result.image_path}"
+                    )
+                    
+                    # Add isolation failure info to metadata
+                    if not processed_result.metadata:
+                        processed_result.metadata = {}
+                    processed_result.metadata["isolation"] = {
+                        "success": False,
+                        "error_message": isolation_result.error_message,
+                        "fallback_used": True
+                    }
+                    
+            except Exception as e:
+                logger.error(f"Image isolation failed for {result.image_path}: {e}")
+                
+                # Add error info to metadata
+                if not processed_result.metadata:
+                    processed_result.metadata = {}
+                processed_result.metadata["isolation"] = {
+                    "success": False,
+                    "error_message": str(e),
+                    "fallback_used": True
+                }
+        
+        return processed_result
+    
+    def get_isolation_service_status(self) -> dict[str, Any]:
+        """Get status of image isolation service."""
+        if not self.isolation_service:
+            return {"enabled": False, "reason": "Service not initialized"}
+        
+        return {
+            "enabled": True,
+            "config": {
+                "background_removal_method": self.isolation_service.config.background_removal_method,
+                "detection_confidence_threshold": self.isolation_service.config.detection_confidence_threshold,
+                "max_processing_time": self.isolation_service.config.max_processing_time,
+                "fallback_to_original": self.isolation_service.config.fallback_to_original
+            }
+        }
+    
+    def get_quality_detector_status(self) -> dict[str, Any]:
+        """Get status of image quality detector."""
+        if not self.quality_detector:
+            return {"enabled": False, "reason": "Service not initialized"}
+        
+        return {
+            "enabled": True,
+            "config": {
+                "min_person_confidence": self.quality_detector.config.min_person_confidence,
+                "max_people_allowed": self.quality_detector.config.max_people_allowed,
+                "min_quality_score": self.quality_detector.config.min_quality_score,
+                "blur_threshold": self.quality_detector.config.blur_threshold,
+                "noise_threshold": self.quality_detector.config.noise_threshold
+            }
+        }
+    
+    def analyze_image_batch_quality(self, image_paths: list[str]) -> dict[str, Any]:
+        """
+        Analyze a batch of images for quality issues.
+        
+        Args:
+            image_paths: List of image paths to analyze
+            
+        Returns:
+            Dict with batch analysis results
+        """
+        if not self.quality_detector:
+            return {"error": "Quality detector not available"}
+        
+        try:
+            batch_result = self.quality_detector.analyze_batch_processing(image_paths)
+            
+            return {
+                "total_images": batch_result.total_images,
+                "faulty_images": batch_result.faulty_images,
+                "faulty_percentage": batch_result.faulty_percentage,
+                "should_regenerate": batch_result.should_regenerate,
+                "common_issues": [issue.value for issue in batch_result.common_issues],
+                "batch_quality_score": batch_result.batch_quality_score,
+                "processing_time": batch_result.processing_time
+            }
+        except Exception as e:
+            logger.error(f"Batch quality analysis failed: {e}")
+            return {"error": str(e)}
 
 
 # Global image service instance

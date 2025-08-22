@@ -8,8 +8,7 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-from pydantic.types import conint, constr
+from pydantic import BaseModel, ConfigDict, Field, field_validator, conint, constr
 
 
 class UserRole(str, Enum):
@@ -27,6 +26,7 @@ class ConsentType(str, Enum):
     IMAGE_GENERATION = "image_generation"
     FEDERATED_LEARNING = "federated_learning"
     ANALYTICS = "analytics"
+    INVESTIGATION_PARTICIPATION = "investigation_participation"
 
 
 class AuditLogStatus(str, Enum):
@@ -226,20 +226,19 @@ class PALDValidationResult(BaseSchema):
     """PALD validation result schema."""
 
     is_valid: bool
-    errors: list[str] = []
-    warnings: list[str] = []
+    errors: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     coverage_percentage: float = Field(ge=0, le=100)
 
 
 class PALDDiff(BaseSchema):
     """PALD comparison result schema."""
 
-    added_fields: list[str] = []
-    removed_fields: list[str] = []
-    modified_fields: list[str] = []
-    unchanged_fields: list[str] = []
-    similarity_score: float = Field(ge=0, le=1)
-
+    added_fields: list[str] = Field(default_factory=list)
+    removed_fields: list[str] = Field(default_factory=list)
+    modified_fields: list[str] = Field(default_factory=list)
+    unchanged_fields: list[str] = Field(default_factory=list)
+    similarity_score: float = Field(default=0.0, ge=0.0, le=1.0)
 
 class PALDCoverageMetrics(BaseSchema):
     """PALD coverage metrics schema."""
@@ -247,9 +246,8 @@ class PALDCoverageMetrics(BaseSchema):
     total_fields: int = Field(ge=0)
     filled_fields: int = Field(ge=0)
     coverage_percentage: float = Field(ge=0, le=100)
-    missing_fields: list[str] = []
-    field_completeness: dict[str, bool] = {}
-
+    missing_fields: list[str] = Field(default_factory=list)
+    field_completeness: dict[str, bool] = Field(default_factory=dict)
 
 # Audit log schemas
 class AuditLogBase(BaseSchema):
@@ -397,3 +395,207 @@ class HealthCheckResponse(BaseSchema):
     timestamp: datetime
     version: str
     uptime_seconds: float
+
+
+# UX Enhancement schemas
+
+class ImageProcessingResultStatus(str, Enum):
+    """Image processing result status enumeration."""
+
+    PENDING = "pending"
+    SUCCESS = "success"
+    FAILED = "failed"
+    CORRECTED = "corrected"
+
+
+class UserCorrectionAction(str, Enum):
+    """User correction action enumeration."""
+
+    ACCEPT_PROCESSED = "accept_processed"
+    ADJUST_CROP = "adjust_crop"
+    USE_ORIGINAL = "use_original"
+    MARK_GARBAGE = "mark_garbage"
+    REGENERATE = "regenerate"
+
+
+class ImageProcessingResultBase(BaseSchema):
+    """Base image processing result schema."""
+
+    original_image_path: constr(min_length=1, max_length=500)
+    processed_image_path: constr(max_length=500) | None = None
+    processing_method: constr(min_length=1, max_length=100)
+    status: ImageProcessingResultStatus = ImageProcessingResultStatus.PENDING
+    confidence_score: conint(ge=0, le=100) | None = None
+    processing_time_ms: conint(ge=0) | None = None
+    quality_issues: list[str] | None = None
+    person_count: conint(ge=0) | None = None
+    quality_score: conint(ge=0, le=100) | None = None
+
+
+class ImageProcessingResultCreate(ImageProcessingResultBase):
+    """Image processing result creation schema."""
+
+    pass
+
+
+class ImageProcessingResultResponse(ImageProcessingResultBase):
+    """Image processing result response schema."""
+
+    id: UUID
+    user_id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+
+class ImageCorrectionBase(BaseSchema):
+    """Base image correction schema."""
+
+    correction_action: UserCorrectionAction
+    crop_coordinates: dict[str, int] | None = None  # {left, top, right, bottom}
+    rejection_reason: constr(max_length=200) | None = None
+    suggested_modifications: str | None = None
+    final_image_path: constr(max_length=500) | None = None
+    correction_time_ms: conint(ge=0) | None = None
+
+
+class ImageCorrectionCreate(ImageCorrectionBase):
+    """Image correction creation schema."""
+
+    processing_result_id: UUID
+
+
+class ImageCorrectionResponse(ImageCorrectionBase):
+    """Image correction response schema."""
+
+    id: UUID
+    processing_result_id: UUID
+    user_id: UUID
+    created_at: datetime
+
+
+class PrerequisiteCheckResultStatus(str, Enum):
+    """Prerequisite check result status enumeration."""
+
+    PASSED = "passed"
+    FAILED = "failed"
+    WARNING = "warning"
+    UNKNOWN = "unknown"
+
+
+class PrerequisiteCheckType(str, Enum):
+    """Prerequisite check type enumeration."""
+
+    REQUIRED = "required"
+    RECOMMENDED = "recommended"
+    OPTIONAL = "optional"
+
+
+class PrerequisiteCheckResultBase(BaseSchema):
+    """Base prerequisite check result schema."""
+
+    operation_name: constr(min_length=1, max_length=100)
+    checker_name: constr(min_length=1, max_length=100)
+    check_type: PrerequisiteCheckType
+    status: PrerequisiteCheckResultStatus
+    message: constr(min_length=1)
+    details: str | None = None
+    resolution_steps: list[str] | None = None
+    check_time_ms: conint(ge=0) | None = None
+    confidence_score: conint(ge=0, le=100) | None = None
+    cached: bool = False
+
+
+class PrerequisiteCheckResultCreate(PrerequisiteCheckResultBase):
+    """Prerequisite check result creation schema."""
+
+    user_id: UUID | None = None
+
+
+class PrerequisiteCheckResultResponse(PrerequisiteCheckResultBase):
+    """Prerequisite check result response schema."""
+
+    id: UUID
+    user_id: UUID | None = None
+    created_at: datetime
+
+
+class TooltipInteractionType(str, Enum):
+    """Tooltip interaction type enumeration."""
+
+    HOVER = "hover"
+    CLICK = "click"
+    FOCUS = "focus"
+    DISMISS = "dismiss"
+    ACTION_TAKEN = "action_taken"
+
+
+class TooltipInteractionBase(BaseSchema):
+    """Base tooltip interaction schema."""
+
+    element_id: constr(min_length=1, max_length=200)
+    tooltip_content_id: constr(max_length=200) | None = None
+    interaction_type: TooltipInteractionType
+    page_context: constr(max_length=200) | None = None
+    tooltip_title: constr(max_length=500) | None = None
+    tooltip_description: str | None = None
+    display_time_ms: conint(ge=0) | None = None
+    user_agent: constr(max_length=500) | None = None
+
+
+class TooltipInteractionCreate(TooltipInteractionBase):
+    """Tooltip interaction creation schema."""
+
+    user_id: UUID | None = None
+    session_id: constr(max_length=255) | None = None
+
+
+class TooltipInteractionResponse(TooltipInteractionBase):
+    """Tooltip interaction response schema."""
+
+    id: UUID
+    user_id: UUID | None = None
+    session_id: str | None = None
+    created_at: datetime
+
+
+class UXEventType(str, Enum):
+    """UX event type enumeration."""
+
+    IMAGE_CORRECTION_STARTED = "image_correction_started"
+    IMAGE_CORRECTION_COMPLETED = "image_correction_completed"
+    PREREQUISITE_CHECK_TRIGGERED = "prerequisite_check_triggered"
+    PREREQUISITE_RESOLUTION_ATTEMPTED = "prerequisite_resolution_attempted"
+    TOOLTIP_HELP_ACCESSED = "tooltip_help_accessed"
+    USER_WORKFLOW_BLOCKED = "user_workflow_blocked"
+    USER_WORKFLOW_RESUMED = "user_workflow_resumed"
+    ACCESSIBILITY_FEATURE_USED = "accessibility_feature_used"
+
+
+class UXAuditLogBase(BaseSchema):
+    """Base UX audit log schema."""
+
+    event_type: UXEventType
+    event_context: constr(max_length=200) | None = None
+    event_data: dict[str, Any] | None = None
+    workflow_step: constr(max_length=100) | None = None
+    success: bool | None = None
+    error_message: str | None = None
+    duration_ms: conint(ge=0) | None = None
+    user_agent: constr(max_length=500) | None = None
+    ip_address: constr(max_length=45) | None = None
+
+
+class UXAuditLogCreate(UXAuditLogBase):
+    """UX audit log creation schema."""
+
+    user_id: UUID | None = None
+    session_id: constr(max_length=255) | None = None
+
+
+class UXAuditLogResponse(UXAuditLogBase):
+    """UX audit log response schema."""
+
+    id: UUID
+    user_id: UUID | None = None
+    session_id: str | None = None
+    created_at: datetime

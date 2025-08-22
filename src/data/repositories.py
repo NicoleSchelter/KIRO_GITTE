@@ -4,7 +4,7 @@ Implements the repository pattern for all database entities with CRUD operations
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -18,11 +18,18 @@ from .models import (
     ConsentRecord,
     ConsentType,
     FederatedLearningUpdate,
+    ImageCorrection,
+    ImageProcessingResult,
+    ImageProcessingResultStatus,
     PALDAttributeCandidate,
     PALDData,
     PALDSchemaVersion,
+    PrerequisiteCheckResult,
     SystemMetadata,
+    TooltipInteraction,
+    UXAuditLog,
     User,
+    UserCorrectionAction,
     UserRole,
 )
 from .schemas import (
@@ -31,9 +38,14 @@ from .schemas import (
     AuditLogUpdate,
     ConsentRecordCreate,
     FederatedLearningUpdateCreate,
+    ImageCorrectionCreate,
+    ImageProcessingResultCreate,
     PALDAttributeCandidateCreate,
     PALDSchemaVersionCreate,
+    PrerequisiteCheckResultCreate,
     SystemMetadataCreate,
+    TooltipInteractionCreate,
+    UXAuditLogCreate,
     UserCreate,
     UserUpdate,
 )
@@ -864,3 +876,465 @@ def get_audit_log_repository() -> AuditLogRepository:
     from src.data.database import get_session_sync
 
     return AuditLogRepository(get_session_sync())
+
+
+# UX Enhancement Repositories
+
+
+class ImageProcessingResultRepository(BaseRepository):
+    """Repository for ImageProcessingResult entities."""
+
+    def __init__(self, session: Session):
+        super().__init__(session, ImageProcessingResult)
+
+    def create(self, user_id: UUID, result_data: ImageProcessingResultCreate) -> ImageProcessingResult | None:
+        """Create a new image processing result."""
+        try:
+            result = ImageProcessingResult(
+                user_id=user_id,
+                original_image_path=result_data.original_image_path,
+                processed_image_path=result_data.processed_image_path,
+                processing_method=result_data.processing_method,
+                status=result_data.status.value if hasattr(result_data.status, "value") else result_data.status,
+                confidence_score=result_data.confidence_score,
+                processing_time_ms=result_data.processing_time_ms,
+                quality_issues=result_data.quality_issues,
+                person_count=result_data.person_count,
+                quality_score=result_data.quality_score,
+            )
+            self.session.add(result)
+            self.session.flush()
+            return result
+        except Exception as e:
+            logger.error(f"Error creating image processing result: {e}")
+            return None
+
+    def get_by_user(self, user_id: UUID, limit: int | None = None) -> list[ImageProcessingResult]:
+        """Get image processing results for a user."""
+        try:
+            query = (
+                self.session.query(ImageProcessingResult)
+                .filter(ImageProcessingResult.user_id == user_id)
+                .order_by(desc(ImageProcessingResult.created_at))
+            )
+            if limit:
+                query = query.limit(limit)
+            return query.all()
+        except Exception as e:
+            logger.error(f"Error getting image processing results for user {user_id}: {e}")
+            return []
+
+    def update_status(self, result_id: UUID, status: ImageProcessingResultStatus) -> bool:
+        """Update processing result status."""
+        try:
+            result = self.get_by_id(result_id)
+            if result:
+                result.status = status.value if hasattr(status, "value") else status
+                result.updated_at = datetime.utcnow()
+                self.session.flush()
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error updating image processing result status {result_id}: {e}")
+            return False
+
+    def get_by_status(self, status: ImageProcessingResultStatus) -> list[ImageProcessingResult]:
+        """Get results by status."""
+        try:
+            return (
+                self.session.query(ImageProcessingResult)
+                .filter(ImageProcessingResult.status == (status.value if hasattr(status, "value") else status))
+                .order_by(desc(ImageProcessingResult.created_at))
+                .all()
+            )
+        except Exception as e:
+            logger.error(f"Error getting image processing results by status {status}: {e}")
+            return []
+
+
+class ImageCorrectionRepository(BaseRepository):
+    """Repository for ImageCorrection entities."""
+
+    def __init__(self, session: Session):
+        super().__init__(session, ImageCorrection)
+
+    def create(self, user_id: UUID, correction_data: ImageCorrectionCreate) -> ImageCorrection | None:
+        """Create a new image correction."""
+        try:
+            correction = ImageCorrection(
+                processing_result_id=correction_data.processing_result_id,
+                user_id=user_id,
+                correction_action=correction_data.correction_action.value if hasattr(correction_data.correction_action, "value") else correction_data.correction_action,
+                crop_coordinates=correction_data.crop_coordinates,
+                rejection_reason=correction_data.rejection_reason,
+                suggested_modifications=correction_data.suggested_modifications,
+                final_image_path=correction_data.final_image_path,
+                correction_time_ms=correction_data.correction_time_ms,
+            )
+            self.session.add(correction)
+            self.session.flush()
+            return correction
+        except Exception as e:
+            logger.error(f"Error creating image correction: {e}")
+            return None
+
+    def get_by_processing_result(self, processing_result_id: UUID) -> list[ImageCorrection]:
+        """Get corrections for a processing result."""
+        try:
+            return (
+                self.session.query(ImageCorrection)
+                .filter(ImageCorrection.processing_result_id == processing_result_id)
+                .order_by(desc(ImageCorrection.created_at))
+                .all()
+            )
+        except Exception as e:
+            logger.error(f"Error getting corrections for processing result {processing_result_id}: {e}")
+            return []
+
+    def get_by_user(self, user_id: UUID, limit: int | None = None) -> list[ImageCorrection]:
+        """Get corrections by user."""
+        try:
+            query = (
+                self.session.query(ImageCorrection)
+                .filter(ImageCorrection.user_id == user_id)
+                .order_by(desc(ImageCorrection.created_at))
+            )
+            if limit:
+                query = query.limit(limit)
+            return query.all()
+        except Exception as e:
+            logger.error(f"Error getting corrections for user {user_id}: {e}")
+            return []
+
+    def get_by_action(self, action: UserCorrectionAction) -> list[ImageCorrection]:
+        """Get corrections by action type."""
+        try:
+            return (
+                self.session.query(ImageCorrection)
+                .filter(ImageCorrection.correction_action == (action.value if hasattr(action, "value") else action))
+                .order_by(desc(ImageCorrection.created_at))
+                .all()
+            )
+        except Exception as e:
+            logger.error(f"Error getting corrections by action {action}: {e}")
+            return []
+
+
+class PrerequisiteCheckResultRepository(BaseRepository):
+    """Repository for PrerequisiteCheckResult entities."""
+
+    def __init__(self, session: Session):
+        super().__init__(session, PrerequisiteCheckResult)
+
+    def create(self, result_data: PrerequisiteCheckResultCreate) -> PrerequisiteCheckResult | None:
+        """Create a new prerequisite check result."""
+        try:
+            result = PrerequisiteCheckResult(
+                user_id=result_data.user_id,
+                operation_name=result_data.operation_name,
+                checker_name=result_data.checker_name,
+                check_type=result_data.check_type.value if hasattr(result_data.check_type, "value") else result_data.check_type,
+                status=result_data.status.value if hasattr(result_data.status, "value") else result_data.status,
+                message=result_data.message,
+                details=result_data.details,
+                resolution_steps=result_data.resolution_steps,
+                check_time_ms=result_data.check_time_ms,
+                confidence_score=result_data.confidence_score,
+                cached=result_data.cached,
+            )
+            self.session.add(result)
+            self.session.flush()
+            return result
+        except Exception as e:
+            logger.error(f"Error creating prerequisite check result: {e}")
+            return None
+
+    def get_by_operation(self, operation_name: str, user_id: UUID | None = None) -> list[PrerequisiteCheckResult]:
+        """Get prerequisite results for an operation."""
+        try:
+            query = self.session.query(PrerequisiteCheckResult).filter(
+                PrerequisiteCheckResult.operation_name == operation_name
+            )
+            if user_id:
+                query = query.filter(PrerequisiteCheckResult.user_id == user_id)
+            return query.order_by(desc(PrerequisiteCheckResult.created_at)).all()
+        except Exception as e:
+            logger.error(f"Error getting prerequisite results for operation {operation_name}: {e}")
+            return []
+
+    def get_latest_by_checker(self, checker_name: str, operation_name: str, user_id: UUID | None = None) -> PrerequisiteCheckResult | None:
+        """Get latest result for a specific checker."""
+        try:
+            query = self.session.query(PrerequisiteCheckResult).filter(
+                and_(
+                    PrerequisiteCheckResult.checker_name == checker_name,
+                    PrerequisiteCheckResult.operation_name == operation_name
+                )
+            )
+            if user_id:
+                query = query.filter(PrerequisiteCheckResult.user_id == user_id)
+            return query.order_by(desc(PrerequisiteCheckResult.created_at)).first()
+        except Exception as e:
+            logger.error(f"Error getting latest result for checker {checker_name}: {e}")
+            return None
+
+    def cleanup_old_results(self, days_to_keep: int = 30) -> int:
+        """Clean up old prerequisite check results."""
+        try:
+            cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
+            deleted_count = (
+                self.session.query(PrerequisiteCheckResult)
+                .filter(PrerequisiteCheckResult.created_at < cutoff_date)
+                .delete()
+            )
+            self.session.flush()
+            return deleted_count
+        except Exception as e:
+            logger.error(f"Error cleaning up old prerequisite results: {e}")
+            return 0
+
+
+class TooltipInteractionRepository(BaseRepository):
+    """Repository for TooltipInteraction entities."""
+
+    def __init__(self, session: Session):
+        super().__init__(session, TooltipInteraction)
+
+    def create(self, interaction_data: TooltipInteractionCreate) -> TooltipInteraction | None:
+        """Create a new tooltip interaction."""
+        try:
+            interaction = TooltipInteraction(
+                user_id=interaction_data.user_id,
+                session_id=interaction_data.session_id,
+                element_id=interaction_data.element_id,
+                tooltip_content_id=interaction_data.tooltip_content_id,
+                interaction_type=interaction_data.interaction_type.value if hasattr(interaction_data.interaction_type, "value") else interaction_data.interaction_type,
+                page_context=interaction_data.page_context,
+                tooltip_title=interaction_data.tooltip_title,
+                tooltip_description=interaction_data.tooltip_description,
+                display_time_ms=interaction_data.display_time_ms,
+                user_agent=interaction_data.user_agent,
+            )
+            self.session.add(interaction)
+            self.session.flush()
+            return interaction
+        except Exception as e:
+            logger.error(f"Error creating tooltip interaction: {e}")
+            return None
+
+    def get_by_user(self, user_id: UUID, limit: int | None = None) -> list[TooltipInteraction]:
+        """Get tooltip interactions for a user."""
+        try:
+            query = (
+                self.session.query(TooltipInteraction)
+                .filter(TooltipInteraction.user_id == user_id)
+                .order_by(desc(TooltipInteraction.created_at))
+            )
+            if limit:
+                query = query.limit(limit)
+            return query.all()
+        except Exception as e:
+            logger.error(f"Error getting tooltip interactions for user {user_id}: {e}")
+            return []
+
+    def get_by_element(self, element_id: str, limit: int | None = None) -> list[TooltipInteraction]:
+        """Get interactions for a specific element."""
+        try:
+            query = (
+                self.session.query(TooltipInteraction)
+                .filter(TooltipInteraction.element_id == element_id)
+                .order_by(desc(TooltipInteraction.created_at))
+            )
+            if limit:
+                query = query.limit(limit)
+            return query.all()
+        except Exception as e:
+            logger.error(f"Error getting tooltip interactions for element {element_id}: {e}")
+            return []
+
+    def get_interaction_stats(self, element_id: str | None = None) -> dict[str, Any]:
+        """Get interaction statistics."""
+        try:
+            query = self.session.query(TooltipInteraction)
+            if element_id:
+                query = query.filter(TooltipInteraction.element_id == element_id)
+            
+            interactions = query.all()
+            
+            stats = {
+                "total_interactions": len(interactions),
+                "unique_users": len(set(i.user_id for i in interactions if i.user_id)),
+                "interaction_types": {},
+                "avg_display_time_ms": 0,
+            }
+            
+            if interactions:
+                # Count interaction types
+                for interaction in interactions:
+                    interaction_type = interaction.interaction_type
+                    stats["interaction_types"][interaction_type] = stats["interaction_types"].get(interaction_type, 0) + 1
+                
+                # Calculate average display time
+                display_times = [i.display_time_ms for i in interactions if i.display_time_ms]
+                if display_times:
+                    stats["avg_display_time_ms"] = sum(display_times) / len(display_times)
+            
+            return stats
+        except Exception as e:
+            logger.error(f"Error getting tooltip interaction stats: {e}")
+            return {}
+
+
+class UXAuditLogRepository(BaseRepository):
+    """Repository for UXAuditLog entities."""
+
+    def __init__(self, session: Session):
+        super().__init__(session, UXAuditLog)
+
+    def create(self, log_data: UXAuditLogCreate) -> UXAuditLog | None:
+        """Create a new UX audit log entry."""
+        try:
+            log_entry = UXAuditLog(
+                user_id=log_data.user_id,
+                session_id=log_data.session_id,
+                event_type=log_data.event_type.value if hasattr(log_data.event_type, "value") else log_data.event_type,
+                event_context=log_data.event_context,
+                event_data=log_data.event_data,
+                workflow_step=log_data.workflow_step,
+                success=log_data.success,
+                error_message=log_data.error_message,
+                duration_ms=log_data.duration_ms,
+                user_agent=log_data.user_agent,
+                ip_address=log_data.ip_address,
+            )
+            self.session.add(log_entry)
+            self.session.flush()
+            return log_entry
+        except Exception as e:
+            logger.error(f"Error creating UX audit log: {e}")
+            return None
+
+    def get_by_user(self, user_id: UUID, limit: int | None = None) -> list[UXAuditLog]:
+        """Get UX audit logs for a user."""
+        try:
+            query = (
+                self.session.query(UXAuditLog)
+                .filter(UXAuditLog.user_id == user_id)
+                .order_by(desc(UXAuditLog.created_at))
+            )
+            if limit:
+                query = query.limit(limit)
+            return query.all()
+        except Exception as e:
+            logger.error(f"Error getting UX audit logs for user {user_id}: {e}")
+            return []
+
+    def get_by_event_type(self, event_type: str, limit: int | None = None) -> list[UXAuditLog]:
+        """Get logs by event type."""
+        try:
+            query = (
+                self.session.query(UXAuditLog)
+                .filter(UXAuditLog.event_type == event_type)
+                .order_by(desc(UXAuditLog.created_at))
+            )
+            if limit:
+                query = query.limit(limit)
+            return query.all()
+        except Exception as e:
+            logger.error(f"Error getting UX audit logs by event type {event_type}: {e}")
+            return []
+
+    def get_workflow_analytics(self, workflow_step: str | None = None) -> dict[str, Any]:
+        """Get workflow analytics."""
+        try:
+            query = self.session.query(UXAuditLog)
+            if workflow_step:
+                query = query.filter(UXAuditLog.workflow_step == workflow_step)
+            
+            logs = query.all()
+            
+            analytics = {
+                "total_events": len(logs),
+                "success_rate": 0,
+                "avg_duration_ms": 0,
+                "event_types": {},
+                "error_types": {},
+            }
+            
+            if logs:
+                # Calculate success rate
+                successful_events = [log for log in logs if log.success is True]
+                analytics["success_rate"] = len(successful_events) / len(logs) * 100
+                
+                # Calculate average duration
+                durations = [log.duration_ms for log in logs if log.duration_ms]
+                if durations:
+                    analytics["avg_duration_ms"] = sum(durations) / len(durations)
+                
+                # Count event types
+                for log in logs:
+                    event_type = log.event_type
+                    analytics["event_types"][event_type] = analytics["event_types"].get(event_type, 0) + 1
+                
+                # Count error types
+                failed_logs = [log for log in logs if log.success is False and log.error_message]
+                for log in failed_logs:
+                    error_type = log.error_message[:50] if log.error_message else "Unknown"
+                    analytics["error_types"][error_type] = analytics["error_types"].get(error_type, 0) + 1
+            
+            return analytics
+        except Exception as e:
+            logger.error(f"Error getting workflow analytics: {e}")
+            return {}
+
+    def cleanup_old_logs(self, days_to_keep: int = 90) -> int:
+        """Clean up old UX audit logs."""
+        try:
+            cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
+            deleted_count = (
+                self.session.query(UXAuditLog)
+                .filter(UXAuditLog.created_at < cutoff_date)
+                .delete()
+            )
+            self.session.flush()
+            return deleted_count
+        except Exception as e:
+            logger.error(f"Error cleaning up old UX audit logs: {e}")
+            return 0
+
+
+# Factory functions for UX enhancement repositories
+
+def get_image_processing_result_repository() -> ImageProcessingResultRepository:
+    """Get image processing result repository with database session."""
+    from src.data.database import get_session_sync
+
+    return ImageProcessingResultRepository(get_session_sync())
+
+
+def get_image_correction_repository() -> ImageCorrectionRepository:
+    """Get image correction repository with database session."""
+    from src.data.database import get_session_sync
+
+    return ImageCorrectionRepository(get_session_sync())
+
+
+def get_prerequisite_check_result_repository() -> PrerequisiteCheckResultRepository:
+    """Get prerequisite check result repository with database session."""
+    from src.data.database import get_session_sync
+
+    return PrerequisiteCheckResultRepository(get_session_sync())
+
+
+def get_tooltip_interaction_repository() -> TooltipInteractionRepository:
+    """Get tooltip interaction repository with database session."""
+    from src.data.database import get_session_sync
+
+    return TooltipInteractionRepository(get_session_sync())
+
+
+def get_ux_audit_log_repository() -> UXAuditLogRepository:
+    """Get UX audit log repository with database session."""
+    from src.data.database import get_session_sync
+
+    return UXAuditLogRepository(get_session_sync())

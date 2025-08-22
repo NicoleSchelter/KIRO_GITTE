@@ -1,0 +1,87 @@
+# Prometheus configuration for GITTE UX enhancements monitoring
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alert_rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # GITTE Application Metrics
+  - job_name: 'gitte-app'
+    static_configs:
+      - targets: ['gitte-app:8501']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # System Metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 15s
+
+  # PostgreSQL Metrics
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scrape_interval: 30s
+
+  # Redis Metrics
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 30s
+
+  # Ollama Service Metrics
+  - job_name: 'ollama'
+    static_configs:
+      - targets: ['ollama:11434']
+    metrics_path: '/api/metrics'
+    scrape_interval: 60s
+    scrape_timeout: 30s
+
+  # UX Enhancement Specific Metrics
+  - job_name: 'ux-enhancements'
+    static_configs:
+      - targets: ['gitte-app:8501']
+    metrics_path: '/ux/performance/metrics'
+    scrape_interval: 30s
+    params:
+      format: ['prometheus']
+
+  # Custom Application Metrics
+  - job_name: 'gitte-custom-metrics'
+    static_configs:
+      - targets: ['gitte-app:8501']
+    metrics_path: '/api/v1/metrics'
+    scrape_interval: 30s
+    metric_relabel_configs:
+      # Relabel UX enhancement metrics
+      - source_labels: [__name__]
+        regex: 'gitte_ux_(.*)'
+        target_label: 'ux_feature'
+        replacement: '${1}'
+      
+      # Add environment label
+      - target_label: 'environment'
+        replacement: 'production'
+      
+      # Add service label
+      - target_label: 'service'
+        replacement: 'gitte'
+
+# Remote write configuration (optional - for long-term storage)
+remote_write:
+  - url: "http://prometheus-remote-storage:9201/write"
+    queue_config:
+      max_samples_per_send: 1000
+      max_shards: 200
+      capacity: 2500

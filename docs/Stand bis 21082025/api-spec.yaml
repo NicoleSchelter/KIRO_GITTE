@@ -1,0 +1,1564 @@
+openapi: 3.1.0
+info:
+  title: GITTE API
+  description: |
+    GITTE (Great Individual Tutor Embodiment) API for creating personalized visual representations 
+    and embodiments of intelligent learning assistants.
+    
+    This API provides endpoints for:
+    - User authentication and management
+    - Consent management and privacy controls
+    - PALD (Pedagogical Agent Level of Design) schema management
+    - LLM chat interactions
+    - Image generation for embodiment avatars
+    - Federated learning capabilities
+    - Administrative functions and monitoring
+    
+    ## Authentication
+    
+    The API uses session-based authentication. Users must first authenticate via the `/auth/login` 
+    endpoint to receive a session token.
+    
+    ## Privacy & GDPR Compliance
+    
+    All data processing requires explicit user consent. The API enforces privacy-by-design principles
+    with comprehensive audit logging and data protection measures.
+    
+    ## Rate Limiting
+    
+    API endpoints are rate-limited to prevent abuse:
+    - Authentication: 5 requests per minute
+    - Chat interactions: 10 requests per minute
+    - Image generation: 3 requests per minute
+    - Administrative: 100 requests per minute
+    
+  version: 1.0.0
+  contact:
+    name: GITTE Development Team
+    email: dev@gitte.ai
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.gitte.ai/v1
+    description: Production server
+  - url: https://staging-api.gitte.ai/v1
+    description: Staging server
+  - url: http://localhost:8501/api/v1
+    description: Development server
+
+paths:
+  # Authentication Endpoints
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register new user
+      description: Create a new user account with role assignment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegistration'
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Invalid input data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Username already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: User login
+      description: Authenticate user and create session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: User logout
+      description: Invalidate current session
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Logout successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  # Consent Management
+  /consent:
+    get:
+      tags:
+        - Consent
+      summary: Get user consent status
+      description: Retrieve current consent status and version
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Consent status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentStatus'
+
+    post:
+      tags:
+        - Consent
+      summary: Grant consent
+      description: Grant consent for data processing
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsentRequest'
+      responses:
+        '200':
+          description: Consent granted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentResponse'
+
+    delete:
+      tags:
+        - Consent
+      summary: Withdraw consent
+      description: Withdraw consent and trigger data deletion
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Consent withdrawn successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  # PALD Management
+  /pald/schema:
+    get:
+      tags:
+        - PALD
+      summary: Get current PALD schema
+      description: Retrieve the current PALD schema version and structure
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: PALD schema retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PALDSchema'
+
+  /pald/data:
+    get:
+      tags:
+        - PALD
+      summary: Get user PALD data
+      description: Retrieve user's PALD data with coverage analysis
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: PALD data retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PALDData'
+
+    post:
+      tags:
+        - PALD
+      summary: Update PALD data
+      description: Update user's PALD data with validation
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PALDUpdateRequest'
+      responses:
+        '200':
+          description: PALD data updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PALDData'
+
+  /pald/compare:
+    post:
+      tags:
+        - PALD
+      summary: Compare PALD data
+      description: Compare two PALD records and return differences
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PALDCompareRequest'
+      responses:
+        '200':
+          description: PALD comparison completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PALDCompareResponse'
+
+  # Chat Interactions
+  /chat/sessions:
+    get:
+      tags:
+        - Chat
+      summary: Get chat sessions
+      description: Retrieve user's chat session history
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Chat sessions retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSessionList'
+
+    post:
+      tags:
+        - Chat
+      summary: Create chat session
+      description: Start a new chat session
+      security:
+        - sessionAuth: []
+      responses:
+        '201':
+          description: Chat session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatSession'
+
+  /chat/sessions/{sessionId}/messages:
+    post:
+      tags:
+        - Chat
+      summary: Send chat message
+      description: Send a message in a chat session and receive LLM response
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatMessageRequest'
+      responses:
+        '200':
+          description: Message sent and response received
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatMessageResponse'
+
+  # Image Generation
+  /images/generate:
+    post:
+      tags:
+        - Images
+      summary: Generate embodiment image
+      description: Generate an avatar image based on text prompt
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageGenerationRequest'
+      responses:
+        '200':
+          description: Image generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageGenerationResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /images/{imageId}:
+    get:
+      tags:
+        - Images
+      summary: Get generated image
+      description: Retrieve a generated image by ID
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: imageId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Image retrieved
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+
+  # Federated Learning
+  /federated-learning/status:
+    get:
+      tags:
+        - Federated Learning
+      summary: Get FL status
+      description: Get federated learning participation status
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: FL status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FederatedLearningStatus'
+
+  /federated-learning/updates:
+    post:
+      tags:
+        - Federated Learning
+      summary: Submit FL update
+      description: Submit local model update for federated learning
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FederatedLearningUpdate'
+      responses:
+        '200':
+          description: FL update submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  # UX Enhancement Endpoints
+  /ux/image-correction:
+    post:
+      tags:
+        - UX Enhancements
+      summary: Process image correction
+      description: Process user image correction decisions and apply manual adjustments
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageCorrectionRequest'
+      responses:
+        '200':
+          description: Image correction processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageCorrectionResponse'
+        '400':
+          description: Invalid correction parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Original image not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /ux/image-quality:
+    post:
+      tags:
+        - UX Enhancements
+      summary: Analyze image quality
+      description: Analyze image quality and detect potential issues
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageQualityRequest'
+      responses:
+        '200':
+          description: Image quality analysis completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageQualityResponse'
+        '400':
+          description: Invalid image or parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /ux/prerequisites:
+    get:
+      tags:
+        - UX Enhancements
+      summary: Check system prerequisites
+      description: Check system prerequisites for a specific operation
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: operation
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [registration, chat_interaction, image_generation, system_startup]
+          description: The operation to check prerequisites for
+      responses:
+        '200':
+          description: Prerequisites checked successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrerequisiteCheckResponse'
+        '400':
+          description: Invalid operation specified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /ux/prerequisites/validate:
+    post:
+      tags:
+        - UX Enhancements
+      summary: Validate prerequisites for operation
+      description: Perform comprehensive prerequisite validation for a specific operation
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrerequisiteValidationRequest'
+      responses:
+        '200':
+          description: Prerequisite validation completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrerequisiteValidationResponse'
+        '400':
+          description: Invalid validation request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /ux/tooltips:
+    get:
+      tags:
+        - UX Enhancements
+      summary: Get tooltip content
+      description: Retrieve tooltip content for a specific UI element
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: element_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The ID of the UI element
+        - name: context
+          in: query
+          required: false
+          schema:
+            type: string
+          description: The context for the tooltip
+        - name: detail_level
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [basic, detailed, advanced]
+            default: basic
+          description: The level of detail for the tooltip
+      responses:
+        '200':
+          description: Tooltip content retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TooltipResponse'
+        '404':
+          description: Tooltip not found for element
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /ux/tooltips/interaction:
+    post:
+      tags:
+        - UX Enhancements
+      summary: Track tooltip interaction
+      description: Track user interaction with tooltips for analytics and learning
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TooltipInteractionRequest'
+      responses:
+        '200':
+          description: Tooltip interaction tracked successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          description: Invalid interaction data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /ux/accessibility:
+    get:
+      tags:
+        - UX Enhancements
+      summary: Get accessibility features
+      description: Get accessibility features and configuration for the current user
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Accessibility features retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessibilityResponse'
+
+  /ux/performance/metrics:
+    get:
+      tags:
+        - UX Enhancements
+      summary: Get UX performance metrics
+      description: Get performance metrics for UX enhancement features
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: time_range
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [1h, 24h, 7d, 30d]
+            default: 1h
+          description: Time range for metrics
+      responses:
+        '200':
+          description: Performance metrics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UXPerformanceMetrics'
+
+  # Administrative Endpoints
+  /admin/statistics:
+    get:
+      tags:
+        - Administration
+      summary: Get system statistics
+      description: Retrieve comprehensive system statistics (Admin only)
+      security:
+        - sessionAuth: []
+      responses:
+        '200':
+          description: Statistics retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStatistics'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/users:
+    get:
+      tags:
+        - Administration
+      summary: List users
+      description: Get list of system users (Admin only)
+      security:
+        - sessionAuth: []
+      parameters:
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [ADMIN, PARTICIPANT]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Users retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserList'
+
+  /admin/export:
+    post:
+      tags:
+        - Administration
+      summary: Export data
+      description: Export system data with filtering options (Admin only)
+      security:
+        - sessionAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExportRequest'
+      responses:
+        '200':
+          description: Export completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportResponse'
+            text/csv:
+              schema:
+                type: string
+
+  # Health and Monitoring
+  /health:
+    get:
+      tags:
+        - Monitoring
+      summary: Health check
+      description: Get system health status
+      responses:
+        '200':
+          description: System is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+
+  /metrics:
+    get:
+      tags:
+        - Monitoring
+      summary: Get metrics
+      description: Get system metrics in Prometheus format
+      responses:
+        '200':
+          description: Metrics retrieved
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    sessionAuth:
+      type: apiKey
+      in: cookie
+      name: session_id
+
+  schemas:
+    # Authentication Schemas
+    UserRegistration:
+      type: object
+      required:
+        - username
+        - password
+        - role
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+          pattern: '^[a-zA-Z0-9_]+$'
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+        role:
+          type: string
+          enum: [ADMIN, PARTICIPANT]
+
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+
+    LoginResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/UserResponse'
+        session_id:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        role:
+          type: string
+          enum: [ADMIN, PARTICIPANT]
+        pseudonym:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    # Consent Schemas
+    ConsentStatus:
+      type: object
+      properties:
+        granted:
+          type: boolean
+        version:
+          type: string
+        granted_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+
+    ConsentRequest:
+      type: object
+      required:
+        - consent_version
+        - granted
+      properties:
+        consent_version:
+          type: string
+        granted:
+          type: boolean
+
+    ConsentResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        granted_at:
+          type: string
+          format: date-time
+        version:
+          type: string
+
+    # PALD Schemas
+    PALDSchema:
+      type: object
+      properties:
+        version:
+          type: string
+        schema:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+
+    PALDData:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        pald_content:
+          type: object
+        schema_version:
+          type: string
+        coverage_percentage:
+          type: number
+          format: float
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PALDUpdateRequest:
+      type: object
+      required:
+        - pald_content
+      properties:
+        pald_content:
+          type: object
+
+    PALDCompareRequest:
+      type: object
+      required:
+        - pald_id_1
+        - pald_id_2
+      properties:
+        pald_id_1:
+          type: string
+          format: uuid
+        pald_id_2:
+          type: string
+          format: uuid
+
+    PALDCompareResponse:
+      type: object
+      properties:
+        added:
+          type: array
+          items:
+            type: string
+        removed:
+          type: array
+          items:
+            type: string
+        modified:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              old:
+                type: string
+              new:
+                type: string
+
+    # Chat Schemas
+    ChatSession:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        created_at:
+          type: string
+          format: date-time
+        message_count:
+          type: integer
+
+    ChatSessionList:
+      type: object
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatSession'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    ChatMessageRequest:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          maxLength: 2000
+
+    ChatMessageResponse:
+      type: object
+      properties:
+        user_message:
+          type: string
+        assistant_response:
+          type: string
+        message_id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        model_used:
+          type: string
+        latency_ms:
+          type: number
+
+    # Image Generation Schemas
+    ImageGenerationRequest:
+      type: object
+      required:
+        - prompt
+      properties:
+        prompt:
+          type: string
+          maxLength: 500
+        negative_prompt:
+          type: string
+          maxLength: 500
+        width:
+          type: integer
+          default: 512
+          minimum: 256
+          maximum: 1024
+        height:
+          type: integer
+          default: 512
+          minimum: 256
+          maximum: 1024
+        steps:
+          type: integer
+          default: 20
+          minimum: 10
+          maximum: 50
+
+    ImageGenerationResponse:
+      type: object
+      properties:
+        image_id:
+          type: string
+          format: uuid
+        image_url:
+          type: string
+          format: uri
+        prompt:
+          type: string
+        generation_time_ms:
+          type: number
+        created_at:
+          type: string
+          format: date-time
+
+    # Federated Learning Schemas
+    FederatedLearningStatus:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        participating:
+          type: boolean
+        last_update:
+          type: string
+          format: date-time
+        updates_submitted:
+          type: integer
+
+    FederatedLearningUpdate:
+      type: object
+      required:
+        - model_weights
+        - data_size
+      properties:
+        model_weights:
+          type: object
+        data_size:
+          type: integer
+        privacy_budget:
+          type: number
+
+    # Administrative Schemas
+    SystemStatistics:
+      type: object
+      properties:
+        users:
+          type: object
+          properties:
+            total:
+              type: integer
+            active_today:
+              type: integer
+            new_today:
+              type: integer
+        system:
+          type: object
+          properties:
+            chat_sessions:
+              type: integer
+            images_generated:
+              type: integer
+            error_rate_percent:
+              type: number
+            uptime_hours:
+              type: number
+        performance:
+          type: object
+          properties:
+            avg_response_time_ms:
+              type: number
+            requests_per_hour:
+              type: number
+
+    UserList:
+      type: object
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserResponse'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    ExportRequest:
+      type: object
+      required:
+        - export_type
+        - format
+      properties:
+        export_type:
+          type: string
+          enum: [users, pald_data, audit_logs, chat_history]
+        format:
+          type: string
+          enum: [json, csv]
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        filters:
+          type: object
+
+    ExportResponse:
+      type: object
+      properties:
+        export_id:
+          type: string
+          format: uuid
+        download_url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+        record_count:
+          type: integer
+
+    # Monitoring Schemas
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        services:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              status:
+                type: string
+              response_time_ms:
+                type: number
+              message:
+                type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    # Common Schemas
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          default: true
+        message:
+          type: string
+
+    # UX Enhancement Schemas
+    ImageCorrectionRequest:
+      type: object
+      required:
+        - decision
+        - original_image_path
+      properties:
+        decision:
+          type: string
+          enum: [accept, adjust, reject, regenerate]
+          description: User's decision on the image correction
+        original_image_path:
+          type: string
+          description: Path to the original image
+        processed_image_path:
+          type: string
+          description: Path to the processed image (if available)
+        crop_coordinates:
+          type: object
+          properties:
+            x:
+              type: integer
+            y:
+              type: integer
+            width:
+              type: integer
+            height:
+              type: integer
+          description: Crop coordinates for manual adjustment
+        rejection_reason:
+          type: string
+          description: Reason for rejecting the image
+        suggested_modifications:
+          type: string
+          description: User's suggestions for improvement
+        confidence_score:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: User's confidence in their decision
+
+    ImageCorrectionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        processing_method:
+          type: string
+          enum: [accept_processed, manual_crop, use_original, regenerate, error]
+        final_image_path:
+          type: string
+          description: Path to the final corrected image
+        processing_time:
+          type: number
+          description: Processing time in seconds
+        user_feedback_recorded:
+          type: boolean
+        regeneration_triggered:
+          type: boolean
+        error_message:
+          type: string
+          description: Error message if processing failed
+
+    ImageQualityRequest:
+      type: object
+      required:
+        - image_path
+      properties:
+        image_path:
+          type: string
+          description: Path to the image to analyze
+        analysis_type:
+          type: string
+          enum: [basic, comprehensive, batch]
+          default: basic
+          description: Type of quality analysis to perform
+
+    ImageQualityResponse:
+      type: object
+      properties:
+        is_faulty:
+          type: boolean
+          description: Whether the image is considered faulty
+        faulty_reasons:
+          type: array
+          items:
+            type: string
+            enum: [no_person_detected, multiple_people_detected, wrong_subject_type, poor_quality, image_too_blurry, image_too_noisy, poor_brightness, low_contrast, corrupted_image, invalid_format]
+          description: List of reasons why the image is faulty
+        quality_score:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Overall quality score
+        confidence_score:
+          type: number
+          minimum: 0
+          maximum: 1
+          description: Confidence in the quality assessment
+        processing_time:
+          type: number
+          description: Analysis processing time in seconds
+        recommendations:
+          type: array
+          items:
+            type: string
+          description: Recommendations for improving the image
+
+    PrerequisiteCheckResponse:
+      type: object
+      properties:
+        overall_status:
+          type: string
+          enum: [passed, failed, passed_with_warnings]
+          description: Overall prerequisite check status
+        individual_results:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/PrerequisiteResult'
+          description: Results for individual prerequisite checks
+        can_proceed:
+          type: boolean
+          description: Whether the operation can proceed
+        blocking_issues:
+          type: array
+          items:
+            type: string
+          description: List of blocking issues that prevent operation
+        warnings:
+          type: array
+          items:
+            type: string
+          description: List of warnings that don't block operation
+
+    PrerequisiteValidationRequest:
+      type: object
+      required:
+        - operation
+      properties:
+        operation:
+          type: string
+          enum: [registration, chat_interaction, image_generation, system_startup]
+          description: The operation to validate prerequisites for
+        force_recheck:
+          type: boolean
+          default: false
+          description: Whether to force a fresh check ignoring cache
+
+    PrerequisiteValidationResponse:
+      type: object
+      properties:
+        overall_status:
+          type: string
+          enum: [passed, failed, passed_with_warnings]
+        individual_results:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/PrerequisiteResult'
+        validation_time:
+          type: number
+          description: Total validation time in seconds
+        cached_results:
+          type: boolean
+          description: Whether results were retrieved from cache
+
+    PrerequisiteResult:
+      type: object
+      properties:
+        passed:
+          type: boolean
+          description: Whether this prerequisite check passed
+        message:
+          type: string
+          description: Human-readable message about the check result
+        details:
+          type: object
+          additionalProperties: true
+          description: Additional details about the check
+        resolution_steps:
+          type: array
+          items:
+            type: string
+          description: Steps to resolve the issue if check failed
+        severity:
+          type: string
+          enum: [info, warning, error, critical]
+          description: Severity level of the issue
+        blocks_operation:
+          type: boolean
+          description: Whether this issue blocks the operation
+
+    TooltipResponse:
+      type: object
+      properties:
+        element_id:
+          type: string
+          description: ID of the UI element
+        content:
+          type: string
+          description: Tooltip content
+        context:
+          type: string
+          description: Context for the tooltip
+        detail_level:
+          type: string
+          enum: [basic, detailed, advanced]
+          description: Level of detail provided
+        aria_attributes:
+          type: object
+          additionalProperties:
+            type: string
+          description: ARIA attributes for accessibility
+        help_resources:
+          type: object
+          properties:
+            help_link:
+              type: string
+            video_tutorial:
+              type: string
+            related_topics:
+              type: array
+              items:
+                type: string
+          description: Additional help resources
+
+    TooltipInteractionRequest:
+      type: object
+      required:
+        - element_id
+        - interaction_type
+      properties:
+        element_id:
+          type: string
+          description: ID of the UI element
+        interaction_type:
+          type: string
+          enum: [hover, click, keyboard_access, screen_reader_access, help_resource_accessed]
+          description: Type of interaction
+        context:
+          type: string
+          description: Context when interaction occurred
+        time_spent:
+          type: number
+          description: Time spent on the tooltip in seconds
+        session_id:
+          type: string
+          description: Session ID for tracking
+        accessibility_context:
+          type: object
+          additionalProperties: true
+          description: Accessibility-related context
+
+    AccessibilityResponse:
+      type: object
+      properties:
+        features_enabled:
+          type: object
+          properties:
+            high_contrast:
+              type: boolean
+            large_text:
+              type: boolean
+            keyboard_navigation:
+              type: boolean
+            screen_reader_support:
+              type: boolean
+          description: Enabled accessibility features
+        css_overrides:
+          type: string
+          description: CSS overrides for accessibility
+        javascript_enhancements:
+          type: string
+          description: JavaScript enhancements for accessibility
+        aria_live_regions:
+          type: array
+          items:
+            type: string
+          description: ARIA live regions configuration
+
+    UXPerformanceMetrics:
+      type: object
+      properties:
+        time_range:
+          type: string
+          description: Time range for the metrics
+        tooltip_metrics:
+          type: object
+          properties:
+            total_interactions:
+              type: integer
+            average_response_time:
+              type: number
+            cache_hit_rate:
+              type: number
+          description: Tooltip system performance metrics
+        image_correction_metrics:
+          type: object
+          properties:
+            total_corrections:
+              type: integer
+            average_processing_time:
+              type: number
+            success_rate:
+              type: number
+          description: Image correction performance metrics
+        prerequisite_metrics:
+          type: object
+          properties:
+            total_validations:
+              type: integer
+            average_validation_time:
+              type: number
+            cache_hit_rate:
+              type: number
+          description: Prerequisite validation performance metrics
+        system_metrics:
+          type: object
+          properties:
+            memory_usage:
+              type: number
+            cpu_usage:
+              type: number
+            response_times:
+              type: object
+              additionalProperties:
+                type: number
+          description: Overall system performance metrics
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        code:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+
+  responses:
+    UnauthorizedError:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    ForbiddenError:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFoundError:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    ValidationError:
+      description: Invalid input data
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    RateLimitError:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

@@ -1,17 +1,14 @@
 {
   "enabled": true,
   "name": "Run Targeted Tests",
-  "description": "Runs only the most relevant pytest tests during active development",
-  "version": "1",
-  "when": {
-    "type": "fileEdited",
-    "patterns": ["src/**/*.py", "tests/**/*.py"]
-  },
+  "description": "Runs focused tests quickly without slow/gpu/e2e",
+  "version": "2",
+  "when": { "type": "fileEdited", "patterns": ["src/**/*.py", "tests/**/*.py"] },
   "then": {
     "type": "runCommands",
     "shell": "bash",
     "commands": [
-      "pytest --last-failed --maxfail=1 -q"
+      "pytest -q -m 'not slow and not gpu and not e2e' --maxfail=1"
     ]
   }
 }

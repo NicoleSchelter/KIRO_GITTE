@@ -107,7 +107,7 @@ def create_environment_configs() -> None:
         "debug": False,
         "log_level": "WARNING",
         "database": {
-            "dsn": "postgresql://test:test@localhost:5432/test_data_collector",
+            "dsn": "postgresql://test:test@localhost:5432/test_kiro_test",
             "echo": False,
             "pool_size": 2,
         },

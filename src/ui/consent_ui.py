@@ -5,13 +5,17 @@ Provides Streamlit components for consent management and privacy compliance.
 
 import logging
 from uuid import UUID
-
+import time
 import streamlit as st
 
 from config.config import get_text
 from src.data.models import ConsentType
 from src.logic.consent import ConsentError
 from src.services.consent_service import get_consent_service
+from src.ui.tooltip_integration import get_tooltip_integration, tooltip_button, tooltip_checkbox
+from src.logic.onboarding import OnboardingStep
+# Temporarily disable for debugging checkbox rendering issues
+# from src.utils.consent_text_loader import render_consent_text_expander, load_consent_text
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +25,7 @@ class ConsentUI:
 
     def __init__(self):
         self.consent_service = get_consent_service()
+        self.tooltip_integration = get_tooltip_integration()
 
     def render_consent_gate(self, user_id: UUID, operation: str) -> bool:
         """
@@ -60,7 +65,7 @@ class ConsentUI:
                     st.write(f"- {self._get_consent_display_name(consent_type)}")
 
             # Provide link to consent management
-            if st.button("Manage Consent Settings"):
+            if tooltip_button("Manage Consent Settings", "consent_settings_button"):
                 st.session_state.show_consent_ui = True
                 st.rerun()
 
@@ -99,16 +104,25 @@ class ConsentUI:
             # Render consent checkboxes
             for consent_type in consent_types:
                 display_name = self._get_consent_display_name(consent_type)
-                description = self._get_consent_description(consent_type)
-
                 current_value = current_status.get(consent_type.value, False)
 
-                # Create checkbox with description
-                consent_values[consent_type] = st.checkbox(
+                # Map consent type to tooltip ID
+                tooltip_id_map = {
+                    ConsentType.DATA_PROCESSING: "data_processing_consent",
+                    ConsentType.AI_INTERACTION: "llm_interaction_consent", 
+                    ConsentType.IMAGE_GENERATION: "image_generation_consent",
+                    ConsentType.ANALYTICS: "analytics_consent",
+                    ConsentType.INVESTIGATION_PARTICIPATION: "investigation_participation_consent",
+                }
+                
+                tooltip_id = tooltip_id_map.get(consent_type, "data_processing_consent")
+
+                # Create checkbox with tooltip
+                consent_values[consent_type] = tooltip_checkbox(
                     display_name,
+                    tooltip_id,
                     value=current_value,
-                    help=description,
-                    key=f"consent_{consent_type.value}",
+                    key=f"consent_{consent_type.value}"
                 )
 
             return consent_values
@@ -139,15 +153,15 @@ class ConsentUI:
             col1, col2, col3 = st.columns(3)
 
             with col1:
-                if st.button("Save Consent Preferences", type="primary"):
+                if tooltip_button("Save Consent Preferences", type="primary"):
                     self._save_consent_preferences(user_id, consent_values)
 
             with col2:
-                if st.button("Withdraw All Consent"):
+                if tooltip_button("Withdraw All Consent"):
                     self._withdraw_all_consent(user_id)
 
             with col3:
-                if st.button("Export My Data"):
+                if tooltip_button("Export My Data"):
                     self._export_user_data(user_id)
 
             # Show consent history
@@ -157,123 +171,6 @@ class ConsentUI:
             logger.error(f"Error rendering consent management: {e}")
             st.error("Error loading consent management. Please try again.")
 
-    def render_onboarding_consent(self, user_id: UUID) -> bool:
-        """
-        Render consent form for onboarding flow.
-
-        Args:
-            user_id: User identifier
-
-        Returns:
-            bool: True if consent was successfully recorded
-        """
-        try:
-            st.title("Welcome to GITTE!")
-            st.write(
-                "Before we begin, we need your consent for data processing and AI interactions."
-            )
-
-            # Show privacy information
-            with st.expander("Privacy Information", expanded=True):
-                st.write(
-                    """
-                **What data do we collect?**
-                - Basic profile information for personalization
-                - Chat interactions to improve your learning experience
-                - Generated images and preferences
-                - Usage analytics to improve the system
-                
-                **How do we use your data?**
-                - To provide personalized tutoring experiences
-                - To generate visual representations of your learning assistant
-                - To improve our AI models (optional, with federated learning)
-                - To ensure system security and compliance
-                
-                **Your rights:**
-                - You can withdraw consent at any time
-                - You can request data export or deletion
-                - Your data is processed according to GDPR standards
-                """
-                )
-
-            # Essential consents (required for basic functionality)
-            st.subheader("Essential Consents (Required)")
-            essential_consents = [ConsentType.DATA_PROCESSING, ConsentType.AI_INTERACTION]
-            essential_values = {}
-
-            for consent_type in essential_consents:
-                display_name = self._get_consent_display_name(consent_type)
-                description = self._get_consent_description(consent_type)
-
-                essential_values[consent_type] = st.checkbox(
-                    display_name,
-                    value=False,
-                    help=description,
-                    key=f"essential_{consent_type.value}",
-                )
-
-            # Optional consents
-            st.subheader("Optional Consents")
-            optional_consents = [
-                ConsentType.IMAGE_GENERATION,
-                ConsentType.FEDERATED_LEARNING,
-                ConsentType.ANALYTICS,
-            ]
-            optional_values = {}
-
-            for consent_type in optional_consents:
-                display_name = self._get_consent_display_name(consent_type)
-                description = self._get_consent_description(consent_type)
-
-                optional_values[consent_type] = st.checkbox(
-                    display_name,
-                    value=True,  # Default to True for optional consents
-                    help=description,
-                    key=f"optional_{consent_type.value}",
-                )
-
-            # Check if essential consents are given
-            essential_given = all(essential_values.values())
-
-            if not essential_given:
-                st.warning("Essential consents are required to use GITTE.")
-
-            # Save consent button
-            if st.button(
-                "Continue with These Settings", type="primary", disabled=not essential_given
-            ):
-                all_consents = {**essential_values, **optional_values}
-
-                try:
-                    # Record bulk consent
-                    self.consent_service.record_bulk_consent(
-                        user_id,
-                        all_consents,
-                        {
-                            "source": "onboarding",
-                            "timestamp": str(st.session_state.get("current_time", "")),
-                        },
-                    )
-
-                    st.success(get_text("success_consent_recorded"))
-                    st.balloons()
-
-                    # Clear the consent UI flag
-                    if "show_consent_ui" in st.session_state:
-                        del st.session_state.show_consent_ui
-
-                    return True
-
-                except ConsentError as e:
-                    st.error(f"Failed to record consent: {e}")
-                    return False
-
-            return False
-
-        except Exception as e:
-            logger.error(f"Error rendering onboarding consent: {e}")
-            st.error("Error loading consent form. Please try again.")
-            return False
 
     def _render_consent_status(self, user_id: UUID) -> None:
         """Render current consent status."""
@@ -377,6 +274,7 @@ class ConsentUI:
             ConsentType.IMAGE_GENERATION: "Image Generation",
             ConsentType.FEDERATED_LEARNING: "Federated Learning",
             ConsentType.ANALYTICS: "Analytics & Improvements",
+            ConsentType.INVESTIGATION_PARTICIPATION: "Investigation Participation",
         }
         return display_names.get(consent_type, consent_type.value.replace("_", " ").title())
 
@@ -388,8 +286,206 @@ class ConsentUI:
             ConsentType.IMAGE_GENERATION: "Allow generation of visual representations and avatars",
             ConsentType.FEDERATED_LEARNING: "Participate in privacy-preserving model improvements",
             ConsentType.ANALYTICS: "Allow collection of usage analytics to improve the system",
+            ConsentType.INVESTIGATION_PARTICIPATION: "Participate in research study to improve educational AI systems",
         }
         return descriptions.get(consent_type, f"Consent for {consent_type.value}")
+
+    def render_onboarding_consent(self, user_id: UUID) -> bool:
+        """Render onboarding-specific consent form for initial setup.
+        
+        Args:
+            user_id: User identifier
+            
+        Returns:
+            bool: True if consent was granted and saved, False otherwise
+        """
+        try:
+            st.write(
+                """
+                To use GITTE and participate in our research investigation, we need your consent for data processing, AI interactions, and research participation.
+                Your privacy is important to us, and you can change these settings at any time.
+                
+                **Research Study**: By using GITTE, you have the opportunity to participate in a research investigation 
+                about personalized AI tutoring systems. This helps improve educational technology for future learners.
+                """
+            )
+
+            # Essential consents for onboarding
+            onboarding_consents = [
+                ConsentType.DATA_PROCESSING,
+                ConsentType.AI_INTERACTION,
+                ConsentType.INVESTIGATION_PARTICIPATION,  # Required for research study
+            ]
+
+            # Optional consents
+            optional_consents = [
+                ConsentType.IMAGE_GENERATION,
+                ConsentType.ANALYTICS,
+            ]
+
+            # Initialize session state for consent tracking
+            if "consent_form_state" not in st.session_state:
+                st.session_state.consent_form_state = {}
+
+            # Get current consent status once, outside the form
+            current_status = self.consent_service.get_consent_status(user_id)
+
+            # Create the consent form
+            st.subheader("Privacy Consent Form")
+            st.write("Please read and consent to the following items:")
+
+            # Required consents section
+            st.markdown("### ✅ Required Consents")
+            st.write("These consents are required to use GITTE:")
+            
+            required_consent_granted = True
+            
+            for i, consent_type in enumerate(onboarding_consents):
+                display_name = self._get_consent_display_name(consent_type)
+                description = self._get_consent_description(consent_type)
+                
+                # Use pre-fetched consent status as default
+                current_value = current_status.get(consent_type.value, False)
+                
+                # Create unique key for each checkbox
+                checkbox_key = f"required_consent_{consent_type.value}_{i}"
+                
+                # Clear container for each consent item
+                with st.container():
+                    st.markdown(f"**{i+1}. {display_name}**")
+                    
+                    # Simple checkbox without complex formatting
+                    granted = st.checkbox(
+                        f"I consent to {display_name.lower()}",
+                        value=current_value,
+                        key=checkbox_key,
+                        help=description
+                    )
+                    
+                    # Track consent state
+                    st.session_state.consent_form_state[consent_type.value] = granted
+                    
+                    # Show description in expandable section
+                    with st.expander(f"View details for {display_name}"):
+                        st.write(description)
+                    
+                    # Update overall required status
+                    if not granted:
+                        required_consent_granted = False
+                    
+                    st.write("")  # Add spacing
+
+            # Optional consents section
+            st.markdown("### 🔧 Optional Consents")
+            st.write("These consents are optional and can be changed later:")
+            
+            for i, consent_type in enumerate(optional_consents):
+                display_name = self._get_consent_display_name(consent_type)
+                description = self._get_consent_description(consent_type)
+                
+                # Use pre-fetched consent status as default
+                current_value = current_status.get(consent_type.value, False)
+                
+                # Create unique key for each checkbox
+                checkbox_key = f"optional_consent_{consent_type.value}_{i}"
+                
+                # Clear container for each consent item
+                with st.container():
+                    st.markdown(f"**{display_name}**")
+                    
+                    # Simple checkbox without complex formatting
+                    granted = st.checkbox(
+                        f"I consent to {display_name.lower()}",
+                        value=current_value,
+                        key=checkbox_key,
+                        help=description
+                    )
+                    
+                    # Track consent state
+                    st.session_state.consent_form_state[consent_type.value] = granted
+                    
+                    # Show description in expandable section
+                    with st.expander(f"View details for {display_name}"):
+                        st.write(description)
+                    
+                    st.write("")  # Add spacing
+
+            # Status display
+            st.divider()
+            st.subheader("Consent Status")
+            
+            if required_consent_granted:
+                st.success("✅ All required consents have been granted. You can proceed with onboarding.")
+            else:
+                missing_required = []
+                for consent_type in onboarding_consents:
+                    if not st.session_state.consent_form_state.get(consent_type.value, False):
+                        missing_required.append(self._get_consent_display_name(consent_type))
+                
+                st.error(f"⚠️ Missing required consents: {', '.join(missing_required)}")
+                st.info("Please check all required consent boxes above to continue.")
+
+            # Action buttons
+            col1, col2 = st.columns([3, 1])
+            
+            with col1:
+                if not required_consent_granted:
+                    st.warning("Please grant all required consents to continue.")
+            
+            with col2:
+                submit_button = st.button(
+                    "Continue with Onboarding",
+                    type="primary",
+                    disabled=not required_consent_granted,
+                    key="consent_submit_btn"
+                )
+
+            # Process form submission
+            if submit_button and required_consent_granted:
+                try:
+                    # Build final consent values from session state
+                    final_consent_values = {}
+                    all_consent_types = onboarding_consents + optional_consents
+                    
+                    for consent_type in all_consent_types:
+                        granted = st.session_state.consent_form_state.get(consent_type.value, False)
+                        final_consent_values[consent_type] = granted
+                    
+                    # Record all consent preferences
+                    self.consent_service.record_bulk_consent(
+                        user_id, 
+                        final_consent_values, 
+                        {"source": "onboarding_flow", "context": "initial_setup"}
+                    )
+                    
+                    st.success("✅ Consent preferences saved successfully!")
+                    st.info("Continuing with onboarding...")
+                    
+                    # Clear the form state
+                    del st.session_state.consent_form_state
+                    
+                    return True
+                    
+                except ConsentError as e:
+                    logger.error(f"Error saving onboarding consent for user {user_id}: {e}")
+                    st.error(f"Failed to save consent preferences: {e}")
+                    return False
+                    
+            elif submit_button and not required_consent_granted:
+                st.error("Please grant all required consents to continue.")
+
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error rendering onboarding consent for user {user_id}: {e}")
+            st.error("Error loading consent form. Please refresh the page and try again.")
+            
+            # Show debug information if there's an error
+            with st.expander("Debug Information (Error Details)"):
+                st.code(f"Error: {str(e)}")
+                st.code(f"Error Type: {type(e).__name__}")
+            
+            return False
 
 
 # Global consent UI instance

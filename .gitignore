@@ -85,7 +85,21 @@ models/
 *.safetensors
 *.ckpt
 
+# RepKopie
+*.zip
+
+# backups
+*.bak
+*.rej
+*.docx
+
 # Generated content
 generated_images/
 exports/
 backups/
+ExecDoku/
+mock_images
+
+patches/
+*.patch
+	ash list
