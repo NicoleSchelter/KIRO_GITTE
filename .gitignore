@@ -88,11 +88,17 @@ models/
 # RepKopie
 *.zip
 
+# backups
+*.bak
+*.rej
+*.docx
+
 # Generated content
 generated_images/
 exports/
 backups/
-ExecDoku
+ExecDoku/
+mock_images
 
 patches/
 *.patch
