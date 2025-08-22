@@ -88,11 +88,11 @@ class OnboardingLogic:
         # Define required consents for each step
         self.step_consent_requirements = {
             OnboardingStep.CONSENT: [],  # No prior consent needed
-            OnboardingStep.SURVEY: [ConsentType.DATA_PROCESSING],
-            OnboardingStep.INTRO_CHAT: [ConsentType.DATA_PROCESSING, ConsentType.AI_INTERACTION],
-            OnboardingStep.DESIGN: [ConsentType.DATA_PROCESSING, ConsentType.AI_INTERACTION],
-            OnboardingStep.CHAT: [ConsentType.DATA_PROCESSING, ConsentType.AI_INTERACTION],
-            OnboardingStep.IMAGE_GENERATION: [
+            OnboardingStep.SURVEY: [ConsentType.DATA_PROCESSING],                                   #!! hier muss noch die Studienteilnahme rein
+            OnboardingStep.INTRO_CHAT: [ConsentType.DATA_PROCESSING, ConsentType.AI_INTERACTION],   #!! hier muss noch die Studienteilnahme rein
+            OnboardingStep.DESIGN: [ConsentType.DATA_PROCESSING, ConsentType.AI_INTERACTION],       #!! hier muss noch die Studienteilnahme rein
+            OnboardingStep.CHAT: [ConsentType.DATA_PROCESSING, ConsentType.AI_INTERACTION],         #!! hier muss noch die Studienteilnahme rein
+            OnboardingStep.IMAGE_GENERATION:[                                                       #!! hier muss noch die Studienteilnahme rein
                 ConsentType.DATA_PROCESSING,
                 ConsentType.IMAGE_GENERATION,
             ],
