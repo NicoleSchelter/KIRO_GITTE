@@ -531,7 +531,7 @@ class PALDEnhancementConfig:
     """Configuration for PALD enhancement features."""
     
     # Schema management
-    schema_file_path: str = "E:/Forschung/KIRO_GITTE/Basic files/pald_schema.json"
+    schema_file_path: str = "E:/Forschung/KIRO_GITTE/config/pald_schema.json"
     schema_cache_ttl: int = 300  # 5 minutes
     enable_schema_evolution: bool = True
     

@@ -599,3 +599,186 @@ class UXAuditLogResponse(UXAuditLogBase):
     user_id: UUID | None = None
     session_id: str | None = None
     created_at: datetime
+
+
+# Pseudonym schemas
+class PseudonymBase(BaseSchema):
+    """Base pseudonym schema."""
+
+    pseudonym_text: constr(min_length=1, max_length=255)
+
+
+class PseudonymCreate(PseudonymBase):
+    """Pseudonym creation schema."""
+
+    pass
+
+
+class PseudonymResponse(PseudonymBase):
+    """Pseudonym response schema."""
+
+    pseudonym_id: UUID
+    pseudonym_hash: str
+    created_at: datetime
+    is_active: bool
+
+
+class PseudonymMappingCreate(BaseSchema):
+    """Pseudonym mapping creation schema."""
+
+    user_id: UUID
+    pseudonym_id: UUID
+    created_by: str
+    access_level: str = "admin_only"
+
+
+class PseudonymMappingResponse(BaseSchema):
+    """Pseudonym mapping response schema."""
+
+    mapping_id: UUID
+    user_id: UUID
+    pseudonym_id: UUID
+    created_at: datetime
+    created_by: str
+    access_level: str
+
+
+class PseudonymValidation(BaseSchema):
+    """Pseudonym validation result schema."""
+
+    is_valid: bool
+    is_unique: bool
+    error_message: str | None = None
+
+
+# InteractionLog schemas
+class InteractionLogCreate(BaseSchema):
+    """Interaction log creation schema."""
+
+    pseudonym_id: UUID
+    session_id: UUID
+    interaction_type: constr(min_length=1, max_length=50)
+    prompt: str | None = None
+    response: str | None = None
+    model_used: constr(min_length=1, max_length=100)
+    parameters: dict[str, Any]
+    token_usage: dict[str, int] | None = None
+    latency_ms: conint(ge=0)
+
+
+class InteractionLogResponse(BaseSchema):
+    """Interaction log response schema."""
+
+    log_id: UUID
+    pseudonym_id: UUID
+    session_id: UUID
+    interaction_type: str
+    prompt: str | None
+    response: str | None
+    model_used: str
+    parameters: dict[str, Any]
+    token_usage: dict[str, int] | None
+    latency_ms: int
+    timestamp: datetime
+
+
+class InteractionLogFilters(BaseSchema):
+    """Interaction log filters schema."""
+
+    pseudonym_id: UUID | None = None
+    session_id: UUID | None = None
+    interaction_types: list[str] | None = None
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+    limit: conint(ge=1, le=1000) | None = None
+    offset: conint(ge=0) | None = None
+# Data Privacy schemas
+class DataDeletionRequest(BaseSchema):
+    """Data deletion request schema."""
+    
+    pseudonym_id: UUID | None = None
+    user_id: UUID | None = None
+    reason: str | None = None
+    requested_by: str
+    
+    @field_validator('pseudonym_id', 'user_id')
+    @classmethod
+    def validate_identifier(cls, v, info):
+        """Validate that at least one identifier is provided."""
+        if not v and not info.data.get('pseudonym_id') and not info.data.get('user_id'):
+            raise ValueError('Either pseudonym_id or user_id must be provided')
+        return v
+
+
+class DataDeletionResult(BaseSchema):
+    """Data deletion result schema."""
+    
+    success: bool
+    pseudonym_id: UUID
+    deletion_summary: dict[str, Any]
+    total_records_deleted: int
+    deletion_timestamp: datetime
+    message: str
+    error_message: str | None = None
+
+
+class DataExportRequest(BaseSchema):
+    """Data export request schema."""
+    
+    pseudonym_id: UUID | None = None
+    user_id: UUID | None = None
+    format: str = Field(default="json", pattern="^(json|csv|xml)$")
+    include_metadata: bool = Field(default=False)
+    requested_by: str
+    
+    @field_validator('pseudonym_id', 'user_id')
+    @classmethod
+    def validate_identifier(cls, v, info):
+        """Validate that at least one identifier is provided."""
+        if not v and not info.data.get('pseudonym_id') and not info.data.get('user_id'):
+            raise ValueError('Either pseudonym_id or user_id must be provided')
+        return v
+
+
+class DataExportResult(BaseSchema):
+    """Data export result schema."""
+    
+    success: bool
+    pseudonym_id: UUID
+    export_data: dict[str, Any]
+    export_timestamp: datetime
+    record_counts: dict[str, int]
+    message: str
+    error_message: str | None = None
+
+
+class PseudonymizationValidationResult(BaseSchema):
+    """Pseudonymization validation result schema."""
+    
+    is_valid: bool
+    violations: list[str]
+    validation_timestamp: datetime
+    data_summary: dict[str, Any]
+
+
+class DataRetentionPolicy(BaseSchema):
+    """Data retention policy schema."""
+    
+    retention_days: conint(ge=1, le=3650)  # 1 day to 10 years
+    policy_name: str
+    applies_to: list[str]  # List of data types
+    auto_cleanup_enabled: bool = Field(default=False)
+    created_by: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class DataCleanupResult(BaseSchema):
+    """Data cleanup result schema."""
+    
+    success: bool
+    cleanup_summary: dict[str, int]
+    total_records_deleted: int
+    cleanup_timestamp: datetime
+    retention_policy: str
+    message: str
+    error_message: str | None = None

@@ -15,16 +15,26 @@ from sqlalchemy.orm import Session
 from .models import (
     AuditLog,
     AuditLogStatus,
+    ChatMessage,
     ConsentRecord,
     ConsentType,
     FederatedLearningUpdate,
+    FeedbackRecord,
+    GeneratedImage,
     ImageCorrection,
     ImageProcessingResult,
     ImageProcessingResultStatus,
+    InteractionLog,
     PALDAttributeCandidate,
     PALDData,
     PALDSchemaVersion,
     PrerequisiteCheckResult,
+    Pseudonym,
+    PseudonymMapping,
+    StudyConsentRecord,
+    StudyConsentType,
+    StudyPALDData,
+    StudySurveyResponse,
     SystemMetadata,
     TooltipInteraction,
     UXAuditLog,
@@ -43,6 +53,8 @@ from .schemas import (
     PALDAttributeCandidateCreate,
     PALDSchemaVersionCreate,
     PrerequisiteCheckResultCreate,
+    PseudonymCreate,
+    PseudonymMappingCreate,
     SystemMetadataCreate,
     TooltipInteractionCreate,
     UXAuditLogCreate,
@@ -1338,3 +1350,773 @@ def get_ux_audit_log_repository() -> UXAuditLogRepository:
     from src.data.database import get_session_sync
 
     return UXAuditLogRepository(get_session_sync())
+
+
+class PseudonymRepository(BaseRepository):
+    """Repository for Pseudonym entities with privacy-preserving mapping."""
+
+    def __init__(self, session: Session):
+        super().__init__(session, Pseudonym)
+
+    def create_pseudonym_with_mapping(
+        self, 
+        pseudonym_data: PseudonymCreate, 
+        pseudonym_hash: str, 
+        user_id: UUID, 
+        created_by: str = "system"
+    ) -> tuple[Pseudonym, PseudonymMapping] | tuple[None, None]:
+        """Create a new pseudonym with user mapping."""
+        try:
+            # Create pseudonym
+            pseudonym = Pseudonym(
+                pseudonym_text=pseudonym_data.pseudonym_text,
+                pseudonym_hash=pseudonym_hash,
+            )
+            self.session.add(pseudonym)
+            self.session.flush()  # Get the pseudonym_id
+
+            # Create mapping
+            mapping = PseudonymMapping(
+                user_id=user_id,
+                pseudonym_id=pseudonym.pseudonym_id,
+                created_by=created_by,
+                access_level="admin_only"
+            )
+            self.session.add(mapping)
+            self.session.flush()
+            
+            return pseudonym, mapping
+        except IntegrityError as e:
+            logger.error(f"Integrity error creating pseudonym: {e}")
+            self.session.rollback()
+            return None, None
+        except Exception as e:
+            logger.error(f"Error creating pseudonym: {e}")
+            self.session.rollback()
+            return None, None
+
+    def get_by_user_id(self, user_id: UUID) -> Pseudonym | None:
+        """Get active pseudonym by user ID through mapping."""
+        try:
+            result = (
+                self.session.query(Pseudonym)
+                .join(PseudonymMapping, Pseudonym.pseudonym_id == PseudonymMapping.pseudonym_id)
+                .filter(
+                    PseudonymMapping.user_id == user_id,
+                    Pseudonym.is_active == True
+                )
+                .first()
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Error getting pseudonym by user ID {user_id}: {e}")
+            return None
+
+    def get_mapping_by_user_id(self, user_id: UUID) -> PseudonymMapping | None:
+        """Get pseudonym mapping by user ID."""
+        try:
+            return (
+                self.session.query(PseudonymMapping)
+                .filter(PseudonymMapping.user_id == user_id)
+                .first()
+            )
+        except Exception as e:
+            logger.error(f"Error getting mapping by user ID {user_id}: {e}")
+            return None
+
+    def get_by_pseudonym_text(self, pseudonym_text: str) -> Pseudonym | None:
+        """Get pseudonym by pseudonym text."""
+        try:
+            return (
+                self.session.query(Pseudonym)
+                .filter(Pseudonym.pseudonym_text == pseudonym_text)
+                .first()
+            )
+        except Exception as e:
+            logger.error(f"Error getting pseudonym by text {pseudonym_text}: {e}")
+            return None
+
+    def is_pseudonym_unique(self, pseudonym_text: str) -> bool:
+        """Check if pseudonym text is unique."""
+        try:
+            existing = self.get_by_pseudonym_text(pseudonym_text)
+            return existing is None
+        except Exception as e:
+            logger.error(f"Error checking pseudonym uniqueness: {e}")
+            return False
+
+    def deactivate_pseudonym(self, pseudonym_id: UUID) -> bool:
+        """Deactivate a pseudonym."""
+        try:
+            pseudonym = self.get_by_id(pseudonym_id)
+            if pseudonym:
+                pseudonym.is_active = False
+                self.session.flush()
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error deactivating pseudonym {pseudonym_id}: {e}")
+            return False
+
+    def deactivate_user_pseudonym(self, user_id: UUID) -> bool:
+        """Deactivate a user's pseudonym through mapping."""
+        try:
+            pseudonym = self.get_by_user_id(user_id)
+            if pseudonym:
+                return self.deactivate_pseudonym(pseudonym.pseudonym_id)
+            return False
+        except Exception as e:
+            logger.error(f"Error deactivating user pseudonym {user_id}: {e}")
+            return False
+
+    def get_by_id(self, pseudonym_id: UUID) -> Pseudonym | None:
+        """Get pseudonym by ID."""
+        try:
+            return (
+                self.session.query(Pseudonym)
+                .filter(Pseudonym.pseudonym_id == pseudonym_id)
+                .first()
+            )
+        except Exception as e:
+            logger.error(f"Error getting pseudonym by ID {pseudonym_id}: {e}")
+            return None
+
+
+class StudyConsentRepository(BaseRepository):
+    """Repository for StudyConsentRecord entities for study participation."""
+
+    def __init__(self, session: Session):
+        super().__init__(session, StudyConsentRecord)
+
+    def create_consent(
+        self,
+        pseudonym_id: UUID,
+        consent_type: StudyConsentType,
+        granted: bool,
+        version: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> StudyConsentRecord | None:
+        """Create a new study consent record."""
+        try:
+            from .models import StudyConsentRecord
+            
+            consent = StudyConsentRecord(
+                pseudonym_id=pseudonym_id,
+                consent_type=consent_type.value if hasattr(consent_type, "value") else consent_type,
+                granted=granted,
+                version=version,
+            )
+            self.session.add(consent)
+            self.session.flush()
+            return consent
+        except Exception as e:
+            logger.error(f"Error creating study consent record: {e}")
+            return None
+
+    def get_by_pseudonym_and_type(
+        self, pseudonym_id: UUID, consent_type: StudyConsentType
+    ) -> StudyConsentRecord | None:
+        """Get latest consent record by pseudonym and type."""
+        try:
+            from .models import StudyConsentRecord
+            
+            return (
+                self.session.query(StudyConsentRecord)
+                .filter(
+                    and_(
+                        StudyConsentRecord.pseudonym_id == pseudonym_id,
+                        StudyConsentRecord.consent_type
+                        == (consent_type.value if hasattr(consent_type, "value") else consent_type),
+                    )
+                )
+                .order_by(desc(StudyConsentRecord.granted_at))
+                .first()
+            )
+        except Exception as e:
+            logger.error(f"Error getting consent by pseudonym {pseudonym_id} and type {consent_type}: {e}")
+            return None
+
+    def get_by_pseudonym(self, pseudonym_id: UUID) -> list[StudyConsentRecord]:
+        """Get all consent records for a pseudonym."""
+        try:
+            from .models import StudyConsentRecord
+            
+            return (
+                self.session.query(StudyConsentRecord)
+                .filter(StudyConsentRecord.pseudonym_id == pseudonym_id)
+                .order_by(desc(StudyConsentRecord.granted_at))
+                .all()
+            )
+        except Exception as e:
+            logger.error(f"Error getting consent records for pseudonym {pseudonym_id}: {e}")
+            return []
+
+    def withdraw_consent(
+        self, pseudonym_id: UUID, consent_type: StudyConsentType, reason: str | None = None
+    ) -> bool:
+        """Withdraw consent for a pseudonym and type."""
+        try:
+            from .models import StudyConsentRecord
+            import time
+
+            # Small delay to ensure different timestamp
+            time.sleep(0.001)
+
+            # Create withdrawal record
+            withdrawal_time = datetime.utcnow()
+            withdrawal = StudyConsentRecord(
+                pseudonym_id=pseudonym_id,
+                consent_type=consent_type.value if hasattr(consent_type, "value") else consent_type,
+                granted=False,
+                version="withdrawal",
+                granted_at=withdrawal_time,
+                revoked_at=withdrawal_time,
+            )
+            self.session.add(withdrawal)
+            self.session.flush()
+            return True
+        except Exception as e:
+            logger.error(f"Error withdrawing consent for pseudonym {pseudonym_id}, type {consent_type}: {e}")
+            return False
+
+    def check_consent(self, pseudonym_id: UUID, consent_type: StudyConsentType) -> bool:
+        """Check if pseudonym has given consent for a specific type."""
+        try:
+            latest_consent = self.get_by_pseudonym_and_type(pseudonym_id, consent_type)
+            # Consent is valid if the latest record shows granted=True and not revoked
+            return (
+                latest_consent is not None
+                and latest_consent.granted
+                and latest_consent.revoked_at is None
+            )
+        except Exception as e:
+            logger.error(f"Error checking consent for pseudonym {pseudonym_id}, type {consent_type}: {e}")
+            return False
+
+    def get_by_id(self, consent_id: UUID) -> StudyConsentRecord | None:
+        """Get study consent record by ID."""
+        try:
+            from .models import StudyConsentRecord
+            
+            return (
+                self.session.query(StudyConsentRecord)
+                .filter(StudyConsentRecord.consent_id == consent_id)
+                .first()
+            )
+        except Exception as e:
+            logger.error(f"Error getting study consent by ID {consent_id}: {e}")
+            return None
+
+    def delete_by_pseudonym(self, pseudonym_id: UUID) -> int:
+        """Delete all consent records for a pseudonym."""
+        try:
+            from .models import StudyConsentRecord
+            
+            count = (
+                self.session.query(StudyConsentRecord)
+                .filter(StudyConsentRecord.pseudonym_id == pseudonym_id)
+                .count()
+            )
+            self.session.query(StudyConsentRecord).filter(
+                StudyConsentRecord.pseudonym_id == pseudonym_id
+            ).delete()
+            self.session.flush()
+            return count
+        except Exception as e:
+            logger.error(f"Error deleting consent records for pseudonym {pseudonym_id}: {e}")
+            return 0
+
+
+class InteractionLogRepository(BaseRepository):
+    """Repository for InteractionLog entities for study participation logging."""
+
+    def __init__(self, session: Session):
+        from .models import InteractionLog
+        super().__init__(session, InteractionLog)
+
+    def create(self, log_data) -> InteractionLog | None:
+        """Create new interaction log."""
+        try:
+            from .models import InteractionLog
+            
+            interaction_log = InteractionLog(
+                pseudonym_id=log_data.pseudonym_id,
+                session_id=log_data.session_id,
+                interaction_type=log_data.interaction_type,
+                prompt=getattr(log_data, 'prompt', None),
+                response=getattr(log_data, 'response', None),
+                model_used=log_data.model_used,
+                parameters=log_data.parameters,
+                token_usage=getattr(log_data, 'token_usage', None),
+                latency_ms=log_data.latency_ms,
+            )
+            self.session.add(interaction_log)
+            self.session.flush()
+            return interaction_log
+        except Exception as e:
+            logger.error(f"Error creating interaction log: {e}")
+            return None
+
+    def update(self, log_id: UUID, update_data: dict) -> InteractionLog | None:
+        """Update interaction log."""
+        try:
+            from .models import InteractionLog
+            
+            interaction_log = (
+                self.session.query(InteractionLog)
+                .filter(InteractionLog.log_id == log_id)
+                .first()
+            )
+            if not interaction_log:
+                return None
+
+            for key, value in update_data.items():
+                if hasattr(interaction_log, key):
+                    setattr(interaction_log, key, value)
+
+            self.session.flush()
+            return interaction_log
+        except Exception as e:
+            logger.error(f"Error updating interaction log {log_id}: {e}")
+            return None
+
+    def get_by_id(self, log_id: UUID) -> InteractionLog | None:
+        """Get interaction log by ID."""
+        try:
+            from .models import InteractionLog
+            
+            return (
+                self.session.query(InteractionLog)
+                .filter(InteractionLog.log_id == log_id)
+                .first()
+            )
+        except Exception as e:
+            logger.error(f"Error getting interaction log by ID {log_id}: {e}")
+            return None
+
+    def get_by_session(self, session_id: UUID) -> list[InteractionLog]:
+        """Get all interaction logs for a session in chronological order."""
+        try:
+            from .models import InteractionLog
+            
+            return (
+                self.session.query(InteractionLog)
+                .filter(InteractionLog.session_id == session_id)
+                .order_by(asc(InteractionLog.timestamp))
+                .all()
+            )
+        except Exception as e:
+            logger.error(f"Error getting interaction logs for session {session_id}: {e}")
+            return []
+
+    def get_by_pseudonym(self, pseudonym_id: UUID, limit: int | None = None) -> list[InteractionLog]:
+        """Get all interaction logs for a pseudonym in chronological order."""
+        try:
+            from .models import InteractionLog
+            
+            query = (
+                self.session.query(InteractionLog)
+                .filter(InteractionLog.pseudonym_id == pseudonym_id)
+                .order_by(desc(InteractionLog.timestamp))
+            )
+            if limit:
+                query = query.limit(limit)
+            return query.all()
+        except Exception as e:
+            logger.error(f"Error getting interaction logs for pseudonym {pseudonym_id}: {e}")
+            return []
+
+    def get_filtered(
+        self,
+        pseudonym_id: UUID | None = None,
+        session_id: UUID | None = None,
+        interaction_types: list[str] | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+    ) -> list[InteractionLog]:
+        """Get filtered interaction logs."""
+        try:
+            from .models import InteractionLog
+            
+            query = self.session.query(InteractionLog)
+
+            if pseudonym_id:
+                query = query.filter(InteractionLog.pseudonym_id == pseudonym_id)
+            if session_id:
+                query = query.filter(InteractionLog.session_id == session_id)
+            if interaction_types:
+                query = query.filter(InteractionLog.interaction_type.in_(interaction_types))
+            if start_date:
+                query = query.filter(InteractionLog.timestamp >= start_date)
+            if end_date:
+                query = query.filter(InteractionLog.timestamp <= end_date)
+
+            return query.order_by(asc(InteractionLog.timestamp)).all()
+        except Exception as e:
+            logger.error(f"Error getting filtered interaction logs: {e}")
+            return []
+
+    def delete_by_pseudonym(self, pseudonym_id: UUID) -> int:
+        """Delete all interaction logs for a pseudonym (GDPR compliance)."""
+        try:
+            from .models import InteractionLog
+            
+            deleted_count = (
+                self.session.query(InteractionLog)
+                .filter(InteractionLog.pseudonym_id == pseudonym_id)
+                .delete()
+            )
+            self.session.flush()
+            return deleted_count
+        except Exception as e:
+            logger.error(f"Error deleting interaction logs for pseudonym {pseudonym_id}: {e}")
+            return 0
+
+    def delete_by_session(self, session_id: UUID) -> int:
+        """Delete all interaction logs for a session."""
+        try:
+            from .models import InteractionLog
+            
+            deleted_count = (
+                self.session.query(InteractionLog)
+                .filter(InteractionLog.session_id == session_id)
+                .delete()
+            )
+            self.session.flush()
+            return deleted_count
+        except Exception as e:
+            logger.error(f"Error deleting interaction logs for session {session_id}: {e}")
+            return 0
+
+    def delete_older_than(self, cutoff_date: datetime) -> int:
+        """Delete interaction logs older than cutoff date."""
+        try:
+            from .models import InteractionLog
+            
+            count = (
+                self.session.query(InteractionLog)
+                .filter(InteractionLog.timestamp < cutoff_date)
+                .count()
+            )
+            self.session.query(InteractionLog).filter(
+                InteractionLog.timestamp < cutoff_date
+            ).delete()
+            self.session.flush()
+            return count
+        except Exception as e:
+            logger.error(f"Error deleting old interaction logs: {e}")
+            return 0
+
+    def get_interaction_count_by_type(
+        self, pseudonym_id: UUID | None = None, start_date: datetime | None = None
+    ) -> dict[str, int]:
+        """Get count of interactions by type."""
+        try:
+            from .models import InteractionLog
+            from sqlalchemy import func
+            
+            query = self.session.query(
+                InteractionLog.interaction_type, func.count(InteractionLog.log_id)
+            )
+
+            if pseudonym_id:
+                query = query.filter(InteractionLog.pseudonym_id == pseudonym_id)
+            if start_date:
+                query = query.filter(InteractionLog.timestamp >= start_date)
+
+            results = query.group_by(InteractionLog.interaction_type).all()
+            return {interaction_type: count for interaction_type, count in results}
+        except Exception as e:
+            logger.error(f"Error getting interaction count by type: {e}")
+            return {}
+
+class PseudonymMappingRepository(BaseRepository):
+    """Repository for PseudonymMapping entities with secure access controls."""
+
+    def __init__(self, session: Session):
+        super().__init__(session, PseudonymMapping)
+
+    def create(self, mapping_data: PseudonymMappingCreate) -> PseudonymMapping | None:
+        """Create a new pseudonym mapping."""
+        try:
+            mapping = PseudonymMapping(
+                user_id=mapping_data.user_id,
+                pseudonym_id=mapping_data.pseudonym_id,
+                created_by=mapping_data.created_by,
+                access_level=mapping_data.access_level,
+            )
+            self.session.add(mapping)
+            self.session.flush()
+            return mapping
+        except Exception as e:
+            logger.error(f"Error creating pseudonym mapping: {e}")
+            return None
+
+    def get_by_user_id(self, user_id: UUID) -> PseudonymMapping | None:
+        """Get pseudonym mapping by user ID."""
+        try:
+            return (
+                self.session.query(PseudonymMapping)
+                .filter(PseudonymMapping.user_id == user_id)
+                .first()
+            )
+        except Exception as e:
+            logger.error(f"Error getting pseudonym mapping by user ID {user_id}: {e}")
+            return None
+
+    def get_by_pseudonym_id(self, pseudonym_id: UUID) -> PseudonymMapping | None:
+        """Get pseudonym mapping by pseudonym ID."""
+        try:
+            return (
+                self.session.query(PseudonymMapping)
+                .filter(PseudonymMapping.pseudonym_id == pseudonym_id)
+                .first()
+            )
+        except Exception as e:
+            logger.error(f"Error getting pseudonym mapping by pseudonym ID {pseudonym_id}: {e}")
+            return None
+
+    def delete_by_user_id(self, user_id: UUID) -> bool:
+        """Delete pseudonym mapping by user ID."""
+        try:
+            mapping = self.get_by_user_id(user_id)
+            if mapping:
+                self.session.delete(mapping)
+                self.session.flush()
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error deleting pseudonym mapping by user ID {user_id}: {e}")
+            return False
+
+    def delete_by_pseudonym(self, pseudonym_id: UUID) -> bool:
+        """Delete pseudonym mapping by pseudonym ID."""
+        try:
+            mapping = self.get_by_pseudonym_id(pseudonym_id)
+            if mapping:
+                self.session.delete(mapping)
+                self.session.flush()
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error deleting pseudonym mapping by pseudonym ID {pseudonym_id}: {e}")
+            return False
+
+
+class StudySurveyResponseRepository(BaseRepository):
+    """Repository for StudySurveyResponse entities."""
+
+    def __init__(self, session: Session):
+        super().__init__(session, StudySurveyResponse)
+
+    def get_by_pseudonym(self, pseudonym_id: UUID) -> list[StudySurveyResponse]:
+        """Get all survey responses for a pseudonym."""
+        try:
+            return (
+                self.session.query(StudySurveyResponse)
+                .filter(StudySurveyResponse.pseudonym_id == pseudonym_id)
+                .order_by(desc(StudySurveyResponse.completed_at))
+                .all()
+            )
+        except Exception as e:
+            logger.error(f"Error getting survey responses for pseudonym {pseudonym_id}: {e}")
+            return []
+
+    def delete_by_pseudonym(self, pseudonym_id: UUID) -> int:
+        """Delete all survey responses for a pseudonym."""
+        try:
+            count = (
+                self.session.query(StudySurveyResponse)
+                .filter(StudySurveyResponse.pseudonym_id == pseudonym_id)
+                .count()
+            )
+            self.session.query(StudySurveyResponse).filter(
+                StudySurveyResponse.pseudonym_id == pseudonym_id
+            ).delete()
+            self.session.flush()
+            return count
+        except Exception as e:
+            logger.error(f"Error deleting survey responses for pseudonym {pseudonym_id}: {e}")
+            return 0
+
+
+class ChatMessageRepository(BaseRepository):
+    """Repository for ChatMessage entities."""
+
+    def __init__(self, session: Session):
+        super().__init__(session, ChatMessage)
+
+    def get_by_pseudonym(self, pseudonym_id: UUID) -> list[ChatMessage]:
+        """Get all chat messages for a pseudonym."""
+        try:
+            return (
+                self.session.query(ChatMessage)
+                .filter(ChatMessage.pseudonym_id == pseudonym_id)
+                .order_by(desc(ChatMessage.timestamp))
+                .all()
+            )
+        except Exception as e:
+            logger.error(f"Error getting chat messages for pseudonym {pseudonym_id}: {e}")
+            return []
+
+    def delete_by_pseudonym(self, pseudonym_id: UUID) -> int:
+        """Delete all chat messages for a pseudonym."""
+        try:
+            count = (
+                self.session.query(ChatMessage)
+                .filter(ChatMessage.pseudonym_id == pseudonym_id)
+                .count()
+            )
+            self.session.query(ChatMessage).filter(
+                ChatMessage.pseudonym_id == pseudonym_id
+            ).delete()
+            self.session.flush()
+            return count
+        except Exception as e:
+            logger.error(f"Error deleting chat messages for pseudonym {pseudonym_id}: {e}")
+            return 0
+
+
+class StudyPALDDataRepository(BaseRepository):
+    """Repository for StudyPALDData entities."""
+
+    def __init__(self, session: Session):
+        super().__init__(session, StudyPALDData)
+
+    def get_by_pseudonym(self, pseudonym_id: UUID) -> list[StudyPALDData]:
+        """Get all PALD data for a pseudonym."""
+        try:
+            return (
+                self.session.query(StudyPALDData)
+                .filter(StudyPALDData.pseudonym_id == pseudonym_id)
+                .order_by(desc(StudyPALDData.created_at))
+                .all()
+            )
+        except Exception as e:
+            logger.error(f"Error getting PALD data for pseudonym {pseudonym_id}: {e}")
+            return []
+
+    def delete_by_pseudonym(self, pseudonym_id: UUID) -> int:
+        """Delete all PALD data for a pseudonym."""
+        try:
+            count = (
+                self.session.query(StudyPALDData)
+                .filter(StudyPALDData.pseudonym_id == pseudonym_id)
+                .count()
+            )
+            self.session.query(StudyPALDData).filter(
+                StudyPALDData.pseudonym_id == pseudonym_id
+            ).delete()
+            self.session.flush()
+            return count
+        except Exception as e:
+            logger.error(f"Error deleting PALD data for pseudonym {pseudonym_id}: {e}")
+            return 0
+
+
+class GeneratedImageRepository(BaseRepository):
+    """Repository for GeneratedImage entities."""
+
+    def __init__(self, session: Session):
+        super().__init__(session, GeneratedImage)
+
+    def get_by_pseudonym(self, pseudonym_id: UUID) -> list[GeneratedImage]:
+        """Get all generated images for a pseudonym."""
+        try:
+            return (
+                self.session.query(GeneratedImage)
+                .filter(GeneratedImage.pseudonym_id == pseudonym_id)
+                .order_by(desc(GeneratedImage.created_at))
+                .all()
+            )
+        except Exception as e:
+            logger.error(f"Error getting generated images for pseudonym {pseudonym_id}: {e}")
+            return []
+
+    def delete_by_pseudonym(self, pseudonym_id: UUID) -> int:
+        """Delete all generated images for a pseudonym."""
+        try:
+            count = (
+                self.session.query(GeneratedImage)
+                .filter(GeneratedImage.pseudonym_id == pseudonym_id)
+                .count()
+            )
+            self.session.query(GeneratedImage).filter(
+                GeneratedImage.pseudonym_id == pseudonym_id
+            ).delete()
+            self.session.flush()
+            return count
+        except Exception as e:
+            logger.error(f"Error deleting generated images for pseudonym {pseudonym_id}: {e}")
+            return 0
+
+    def delete_older_than(self, cutoff_date: datetime) -> int:
+        """Delete generated images older than cutoff date."""
+        try:
+            count = (
+                self.session.query(GeneratedImage)
+                .filter(GeneratedImage.created_at < cutoff_date)
+                .count()
+            )
+            self.session.query(GeneratedImage).filter(
+                GeneratedImage.created_at < cutoff_date
+            ).delete()
+            self.session.flush()
+            return count
+        except Exception as e:
+            logger.error(f"Error deleting old generated images: {e}")
+            return 0
+
+
+class FeedbackRecordRepository(BaseRepository):
+    """Repository for FeedbackRecord entities."""
+
+    def __init__(self, session: Session):
+        super().__init__(session, FeedbackRecord)
+
+    def get_by_pseudonym(self, pseudonym_id: UUID) -> list[FeedbackRecord]:
+        """Get all feedback records for a pseudonym."""
+        try:
+            return (
+                self.session.query(FeedbackRecord)
+                .filter(FeedbackRecord.pseudonym_id == pseudonym_id)
+                .order_by(desc(FeedbackRecord.created_at))
+                .all()
+            )
+        except Exception as e:
+            logger.error(f"Error getting feedback records for pseudonym {pseudonym_id}: {e}")
+            return []
+
+    def delete_by_pseudonym(self, pseudonym_id: UUID) -> int:
+        """Delete all feedback records for a pseudonym."""
+        try:
+            count = (
+                self.session.query(FeedbackRecord)
+                .filter(FeedbackRecord.pseudonym_id == pseudonym_id)
+                .count()
+            )
+            self.session.query(FeedbackRecord).filter(
+                FeedbackRecord.pseudonym_id == pseudonym_id
+            ).delete()
+            self.session.flush()
+            return count
+        except Exception as e:
+            logger.error(f"Error deleting feedback records for pseudonym {pseudonym_id}: {e}")
+            return 0
+
+    def delete_older_than(self, cutoff_date: datetime) -> int:
+        """Delete feedback records older than cutoff date."""
+        try:
+            count = (
+                self.session.query(FeedbackRecord)
+                .filter(FeedbackRecord.created_at < cutoff_date)
+                .count()
+            )
+            self.session.query(FeedbackRecord).filter(
+                FeedbackRecord.created_at < cutoff_date
+            ).delete()
+            self.session.flush()
+            return count
+        except Exception as e:
+            logger.error(f"Error deleting old feedback records: {e}")
+            return 0

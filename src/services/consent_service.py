@@ -1,25 +1,34 @@
 """
-Consent service for GITTE system.
-Provides service layer abstraction for consent management operations.
+Consent service for study participation in GITTE system.
+Provides service layer abstraction for consent management operations using pseudonyms.
 """
 
 import logging
-from typing import Any
+from typing import Any, Dict, List
 from uuid import UUID
 
 from src.data.database import get_session
-from src.data.models import ConsentType
-from src.data.repositories import ConsentRepository
-from src.data.schemas import ConsentRecordResponse
-from src.logic.consent import ConsentLogic
+from src.data.models import StudyConsentType, StudyConsentRecord
+from src.data.repositories import StudyConsentRepository
+from src.logic.consent_logic import ConsentLogic
 
 logger = logging.getLogger(__name__)
 
 
+def get_consent_service() -> ConsentService:
+    """Get consent service instance."""
+    return ConsentService()
+
+
+def get_study_consent_service() -> ConsentService:
+    """Get study consent service instance."""
+    return ConsentService()
+
+
 class ConsentService:
     """
-    Service layer for consent management.
-    Handles database sessions and provides high-level consent operations.
+    Service layer for study participation consent management.
+    Handles database sessions and provides high-level consent operations using pseudonyms.
     """
 
     def __init__(self):
@@ -31,29 +40,29 @@ class ConsentService:
             raise RuntimeError("Service not properly initialized with session")
 
         if not self.consent_logic:
-            consent_repository = ConsentRepository(self._session)
+            consent_repository = StudyConsentRepository(self._session)
             self.consent_logic = ConsentLogic(consent_repository)
 
         return self.consent_logic
 
     def record_consent(
         self,
-        user_id: UUID,
-        consent_type: ConsentType,
-        consent_given: bool,
-        metadata: dict[str, Any] | None = None,
-    ) -> ConsentRecordResponse:
+        pseudonym_id: UUID,
+        consent_type: StudyConsentType,
+        granted: bool,
+        metadata: Dict[str, Any] | None = None,
+    ) -> StudyConsentRecord:
         """
-        Record user consent for a specific type.
+        Record participant consent for a specific type.
 
         Args:
-            user_id: User identifier
+            pseudonym_id: Pseudonym identifier for the participant
             consent_type: Type of consent being recorded
-            consent_given: Whether consent is given or denied
+            granted: Whether consent is granted or denied
             metadata: Additional consent metadata
 
         Returns:
-            ConsentRecordResponse: Created consent record
+            StudyConsentRecord: Created consent record
 
         Raises:
             ConsentError: If consent recording fails
@@ -62,7 +71,7 @@ class ConsentService:
             with get_session() as session:
                 self._session = session
                 consent_logic = self._get_consent_logic()
-                return consent_logic.record_consent(user_id, consent_type, consent_given, metadata)
+                return consent_logic.record_consent(pseudonym_id, consent_type, granted, metadata)
         except Exception as e:
             logger.error(f"Service error recording consent: {e}")
             raise
@@ -71,13 +80,16 @@ class ConsentService:
             self.consent_logic = None
 
     def withdraw_consent(
-        self, user_id: UUID, consent_type: ConsentType, reason: str | None = None
+        self, 
+        pseudonym_id: UUID, 
+        consent_type: StudyConsentType, 
+        reason: str | None = None
     ) -> bool:
         """
-        Withdraw user consent for a specific type.
+        Withdraw participant consent for a specific type.
 
         Args:
-            user_id: User identifier
+            pseudonym_id: Pseudonym identifier for the participant
             consent_type: Type of consent to withdraw
             reason: Optional reason for withdrawal
 
@@ -91,7 +103,7 @@ class ConsentService:
             with get_session() as session:
                 self._session = session
                 consent_logic = self._get_consent_logic()
-                return consent_logic.withdraw_consent(user_id, consent_type, reason)
+                return consent_logic.withdraw_consent(pseudonym_id, consent_type, reason)
         except Exception as e:
             logger.error(f"Service error withdrawing consent: {e}")
             raise
@@ -99,22 +111,22 @@ class ConsentService:
             self._session = None
             self.consent_logic = None
 
-    def check_consent(self, user_id: UUID, consent_type: ConsentType) -> bool:
+    def check_consent(self, pseudonym_id: UUID, consent_type: StudyConsentType) -> bool:
         """
-        Check if user has given valid consent for a specific type.
+        Check if participant has given valid consent for a specific type.
 
         Args:
-            user_id: User identifier
+            pseudonym_id: Pseudonym identifier for the participant
             consent_type: Type of consent to check
 
         Returns:
-            bool: True if user has valid consent
+            bool: True if participant has valid consent
         """
         try:
             with get_session() as session:
                 self._session = session
                 consent_logic = self._get_consent_logic()
-                return consent_logic.check_consent(user_id, consent_type)
+                return consent_logic.check_consent(pseudonym_id, consent_type)
         except Exception as e:
             logger.error(f"Service error checking consent: {e}")
             return False
@@ -122,12 +134,12 @@ class ConsentService:
             self._session = None
             self.consent_logic = None
 
-    def require_consent(self, user_id: UUID, consent_type: ConsentType) -> None:
+    def require_consent(self, pseudonym_id: UUID, consent_type: StudyConsentType) -> None:
         """
         Require consent for a specific type, raise exception if not given.
 
         Args:
-            user_id: User identifier
+            pseudonym_id: Pseudonym identifier for the participant
             consent_type: Type of consent required
 
         Raises:
@@ -137,7 +149,7 @@ class ConsentService:
             with get_session() as session:
                 self._session = session
                 consent_logic = self._get_consent_logic()
-                consent_logic.require_consent(user_id, consent_type)
+                consent_logic.require_consent(pseudonym_id, consent_type)
         except Exception as e:
             logger.error(f"Service error requiring consent: {e}")
             raise
@@ -145,34 +157,12 @@ class ConsentService:
             self._session = None
             self.consent_logic = None
 
-    def get_user_consents(self, user_id: UUID) -> list[ConsentRecordResponse]:
+    def get_consent_status(self, pseudonym_id: UUID) -> Dict[str, bool]:
         """
-        Get all consent records for a user.
+        Get current consent status for all consent types for a participant.
 
         Args:
-            user_id: User identifier
-
-        Returns:
-            List of consent records for the user
-        """
-        try:
-            with get_session() as session:
-                self._session = session
-                consent_logic = self._get_consent_logic()
-                return consent_logic.get_user_consents(user_id)
-        except Exception as e:
-            logger.error(f"Service error getting user consents: {e}")
-            return []
-        finally:
-            self._session = None
-            self.consent_logic = None
-
-    def get_consent_status(self, user_id: UUID) -> dict[str, bool]:
-        """
-        Get current consent status for all consent types for a user.
-
-        Args:
-            user_id: User identifier
+            pseudonym_id: Pseudonym identifier for the participant
 
         Returns:
             Dict mapping consent types to their current status
@@ -181,7 +171,7 @@ class ConsentService:
             with get_session() as session:
                 self._session = session
                 consent_logic = self._get_consent_logic()
-                return consent_logic.get_consent_status(user_id)
+                return consent_logic.get_consent_status(pseudonym_id)
         except Exception as e:
             logger.error(f"Service error getting consent status: {e}")
             return {}
@@ -189,63 +179,118 @@ class ConsentService:
             self._session = None
             self.consent_logic = None
 
-    def check_operation_consent(self, user_id: UUID, operation: str) -> bool:
+    def validate_consent_completeness(self, consents: List[StudyConsentType]) -> Dict[str, Any]:
         """
-        Check if user has all required consents for a specific operation.
+        Validate that all required consents are present.
 
         Args:
-            user_id: User identifier
-            operation: Operation name
+            consents: List of consent types to validate
 
         Returns:
-            bool: True if user has all required consents
+            Dict containing validation results
         """
         try:
             with get_session() as session:
                 self._session = session
                 consent_logic = self._get_consent_logic()
-                return consent_logic.check_operation_consent(user_id, operation)
+                return consent_logic.validate_consent_completeness(consents)
         except Exception as e:
-            logger.error(f"Service error checking operation consent: {e}")
-            return False
+            logger.error(f"Service error validating consent completeness: {e}")
+            return {"is_complete": False, "missing_consents": [], "error": str(e)}
         finally:
             self._session = None
             self.consent_logic = None
 
-    def require_operation_consent(self, user_id: UUID, operation: str) -> None:
+    def process_consent_collection(
+        self, 
+        pseudonym_id: UUID, 
+        consents: Dict[str, bool]
+    ) -> Dict[str, Any]:
         """
-        Require all consents for a specific operation.
+        Process multi-step consent collection for study participation.
 
         Args:
-            user_id: User identifier
-            operation: Operation name
+            pseudonym_id: Pseudonym identifier for the participant
+            consents: Dict mapping consent type strings to boolean values
+
+        Returns:
+            Dict containing processing results
 
         Raises:
-            ConsentRequiredError: If any required consent is missing
+            ConsentError: If consent processing fails
         """
         try:
             with get_session() as session:
                 self._session = session
                 consent_logic = self._get_consent_logic()
-                consent_logic.require_operation_consent(user_id, operation)
+                return consent_logic.process_consent_collection(pseudonym_id, consents)
         except Exception as e:
-            logger.error(f"Service error requiring operation consent: {e}")
+            logger.error(f"Service error processing consent collection: {e}")
             raise
+        finally:
+            self._session = None
+            self.consent_logic = None
+
+    def check_consent_status(self, pseudonym_id: UUID) -> Dict[str, Any]:
+        """
+        Check comprehensive consent status for a participant.
+
+        Args:
+            pseudonym_id: Pseudonym identifier for the participant
+
+        Returns:
+            Dict containing consent status information
+        """
+        try:
+            with get_session() as session:
+                self._session = session
+                consent_logic = self._get_consent_logic()
+                return consent_logic.check_consent_status(pseudonym_id)
+        except Exception as e:
+            logger.error(f"Service error checking consent status: {e}")
+            return {
+                "pseudonym_id": pseudonym_id,
+                "consent_status": {},
+                "all_required_granted": False,
+                "can_proceed_to_study": False
+            }
+        finally:
+            self._session = None
+            self.consent_logic = None
+
+    def get_participant_consents(self, pseudonym_id: UUID) -> List[StudyConsentRecord]:
+        """
+        Get all consent records for a participant.
+
+        Args:
+            pseudonym_id: Pseudonym identifier for the participant
+
+        Returns:
+            List of consent records for the participant
+        """
+        try:
+            with get_session() as session:
+                self._session = session
+                consent_logic = self._get_consent_logic()
+                return consent_logic.get_participant_consents(pseudonym_id)
+        except Exception as e:
+            logger.error(f"Service error getting participant consents: {e}")
+            return []
         finally:
             self._session = None
             self.consent_logic = None
 
     def record_bulk_consent(
         self,
-        user_id: UUID,
-        consents: dict[ConsentType, bool],
-        metadata: dict[str, Any] | None = None,
-    ) -> list[ConsentRecordResponse]:
+        pseudonym_id: UUID,
+        consents: Dict[StudyConsentType, bool],
+        metadata: Dict[str, Any] | None = None,
+    ) -> List[StudyConsentRecord]:
         """
         Record multiple consents at once (useful for onboarding flow).
 
         Args:
-            user_id: User identifier
+            pseudonym_id: Pseudonym identifier for the participant
             consents: Dict mapping consent types to their values
             metadata: Additional metadata for all consents
 
@@ -256,7 +301,7 @@ class ConsentService:
             with get_session() as session:
                 self._session = session
                 consent_logic = self._get_consent_logic()
-                return consent_logic.record_bulk_consent(user_id, consents, metadata)
+                return consent_logic.record_bulk_consent(pseudonym_id, consents, metadata)
         except Exception as e:
             logger.error(f"Service error recording bulk consent: {e}")
             raise
@@ -264,120 +309,56 @@ class ConsentService:
             self._session = None
             self.consent_logic = None
 
-    def get_consent_summary(self, user_id: UUID) -> dict[str, Any]:
-        """
-        Get a comprehensive consent summary for a user.
 
-        Args:
-            user_id: User identifier
-
-        Returns:
-            Dict containing consent summary information
-        """
-        try:
-            with get_session() as session:
-                self._session = session
-                consent_logic = self._get_consent_logic()
-                return consent_logic.get_consent_summary(user_id)
-        except Exception as e:
-            logger.error(f"Service error getting consent summary: {e}")
-            return {}
-        finally:
-            self._session = None
-            self.consent_logic = None
-
-    def get_required_consents_for_operation(self, operation: str) -> list[ConsentType]:
-        """
-        Get required consent types for a specific operation.
-
-        Args:
-            operation: Operation name
-
-        Returns:
-            List of required consent types
-        """
-        try:
-            with get_session() as session:
-                self._session = session
-                consent_logic = self._get_consent_logic()
-                return consent_logic.get_required_consents_for_operation(operation)
-        except Exception as e:
-            logger.error(f"Service error getting required consents: {e}")
-            return []
-        finally:
-            self._session = None
-            self.consent_logic = None
-
-    def is_consent_gate_enabled(self) -> bool:
-        """
-        Check if consent gate is enabled via feature flag.
-
-        Returns:
-            bool: True if consent gate is enabled
-        """
-        try:
-            with get_session() as session:
-                self._session = session
-                consent_logic = self._get_consent_logic()
-                return consent_logic.is_consent_gate_enabled()
-        except Exception as e:
-            logger.error(f"Service error checking consent gate status: {e}")
-            return False
-        finally:
-            self._session = None
-            self.consent_logic = None
+# Global consent service instance for study participation
+study_consent_service = ConsentService()
 
 
-# Global consent service instance
-consent_service = ConsentService()
-
-
-def get_consent_service() -> ConsentService:
-    """Get the global consent service instance."""
-    return consent_service
+def get_study_consent_service() -> ConsentService:
+    """Get the global study consent service instance."""
+    return study_consent_service
 
 
 # Convenience functions for common operations
 def record_consent(
-    user_id: UUID,
-    consent_type: ConsentType,
-    consent_given: bool,
-    metadata: dict[str, Any] | None = None,
-) -> ConsentRecordResponse:
-    """Record user consent."""
-    return consent_service.record_consent(user_id, consent_type, consent_given, metadata)
+    pseudonym_id: UUID,
+    consent_type: StudyConsentType,
+    granted: bool,
+    metadata: Dict[str, Any] | None = None,
+) -> StudyConsentRecord:
+    """Record participant consent."""
+    return study_consent_service.record_consent(pseudonym_id, consent_type, granted, metadata)
 
 
-def withdraw_consent(user_id: UUID, consent_type: ConsentType, reason: str | None = None) -> bool:
-    """Withdraw user consent."""
-    return consent_service.withdraw_consent(user_id, consent_type, reason)
+def withdraw_consent(
+    pseudonym_id: UUID, 
+    consent_type: StudyConsentType, 
+    reason: str | None = None
+) -> bool:
+    """Withdraw participant consent."""
+    return study_consent_service.withdraw_consent(pseudonym_id, consent_type, reason)
 
 
-def check_consent(user_id: UUID, consent_type: ConsentType) -> bool:
-    """Check if user has given consent."""
-    return consent_service.check_consent(user_id, consent_type)
+def check_consent(pseudonym_id: UUID, consent_type: StudyConsentType) -> bool:
+    """Check if participant has given consent."""
+    return study_consent_service.check_consent(pseudonym_id, consent_type)
 
 
-def require_consent(user_id: UUID, consent_type: ConsentType) -> None:
+def require_consent(pseudonym_id: UUID, consent_type: StudyConsentType) -> None:
     """Require consent, raise exception if not given."""
-    consent_service.require_consent(user_id, consent_type)
+    study_consent_service.require_consent(pseudonym_id, consent_type)
 
 
-def check_operation_consent(user_id: UUID, operation: str) -> bool:
-    """Check if user has all required consents for an operation."""
-    return consent_service.check_operation_consent(user_id, operation)
-
-
-def require_operation_consent(user_id: UUID, operation: str) -> None:
-    """Require all consents for an operation."""
-    consent_service.require_operation_consent(user_id, operation)
-
-
-def get_consent_status(user_id: UUID) -> dict[str, bool]:
+def get_consent_status(pseudonym_id: UUID) -> Dict[str, bool]:
     """Get current consent status for all types."""
-    return consent_service.get_consent_status(user_id)
+    return study_consent_service.get_consent_status(pseudonym_id)
 
 
-def get_consent_summary(user_id: UUID) -> dict[str, Any]:
-    """Get comprehensive consent summary."""
-    return consent_service.get_consent_summary(user_id)
+def process_consent_collection(pseudonym_id: UUID, consents: Dict[str, bool]) -> Dict[str, Any]:
+    """Process multi-step consent collection."""
+    return study_consent_service.process_consent_collection(pseudonym_id, consents)
+
+
+def check_consent_status(pseudonym_id: UUID) -> Dict[str, Any]:
+    """Check comprehensive consent status."""
+    return study_consent_service.check_consent_status(pseudonym_id)

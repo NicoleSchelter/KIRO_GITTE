@@ -218,8 +218,8 @@ class ConsentError(BusinessLogicError):
     """Consent-related errors."""
 
     def __init__(self, message: str, **kwargs):
-        # Kategorie Privacy ist konsistenter als Authorization für Consent-Themen
-        super().__init__(message, category=ErrorCategory.PRIVACY, **kwargs)
+        # Use the default category from BusinessLogicError to avoid conflicts
+        super().__init__(message, **kwargs)
         # Optional eine nutzerfreundliche Default-Message:
         self.user_message = kwargs.get(
             "user_message", "Consent is required to proceed with this action."

@@ -1,0 +1,11 @@
+question_id,question_text,type,options,required
+participant_name,What is your full name?,text,,true
+participant_age,What is your age?,number,,true
+learning_style,What is your preferred learning style?,choice,"Visual,Auditory,Kinesthetic,Reading/Writing,Multimodal",true
+difficulty_level,What difficulty level do you prefer?,choice,"Beginner,Intermediate,Advanced,Expert",true
+subject_interests,Which subjects interest you most?,multi-choice,"Mathematics,Science,Technology,Engineering,Language Arts,History,Art,Music,Psychology,Philosophy",false
+learning_goals,What are your main learning goals?,text,,false
+motivation_factors,What motivates you to learn?,multi-choice,"Personal growth,Career advancement,Academic requirements,Curiosity,Problem-solving,Creative expression",false
+feedback_preference,How do you prefer to receive feedback?,choice,"Encouraging,Direct,Detailed,Brief",false
+communication_style,What communication style do you prefer?,choice,"Formal,Friendly,Enthusiastic,Calm",false
+personalization_level,How much personalization do you want?,choice,"Minimal,Moderate,High,Maximum",false

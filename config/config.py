@@ -275,6 +275,16 @@ class FeatureFlags:
     enable_pald_boundary_enforcement: bool = True
     enable_pald_schema_evolution: bool = True
     enable_pald_candidate_harvesting: bool = True
+    
+    # Study Participation Feature Flags
+    enable_study_participation: bool = True
+    enable_pseudonym_management: bool = True
+    enable_consent_collection: bool = True
+    enable_dynamic_surveys: bool = True
+    enable_chat_pald_pipeline: bool = True
+    enable_feedback_loops: bool = True
+    enable_interaction_logging: bool = True
+    enable_admin_functions: bool = True
 
     def __post_init__(self):
         """Override feature flags from environment variables."""
@@ -302,6 +312,11 @@ class PALDBoundaryConfig:
     migration_timeout_minutes: int = 60
     enable_migration_rollback: bool = True
     
+    # Chat and PALD Pipeline Configuration
+    max_feedback_rounds: int = 3
+    pald_consistency_threshold: float = 0.8
+    pald_consistency_max_iterations: int = 5
+    
     def __post_init__(self):
         """Override from environment variables."""
         if env_path := os.getenv("PALD_SCHEMA_FILE_PATH"):
@@ -310,6 +325,12 @@ class PALDBoundaryConfig:
             self.pald_schema_cache_ttl = int(env_ttl)
         if env_support := os.getenv("PALD_CANDIDATE_MIN_SUPPORT"):
             self.pald_candidate_min_support = int(env_support)
+        if env_max_rounds := os.getenv("MAX_FEEDBACK_ROUNDS"):
+            self.max_feedback_rounds = int(env_max_rounds)
+        if env_threshold := os.getenv("PALD_CONSISTENCY_THRESHOLD"):
+            self.pald_consistency_threshold = float(env_threshold)
+        if env_max_iter := os.getenv("PALD_CONSISTENCY_MAX_ITERATIONS"):
+            self.pald_consistency_max_iterations = int(env_max_iter)
 
 
 @dataclass
@@ -341,6 +362,137 @@ class PALDEnhancementConfig:
 
 
 @dataclass
+class StudyParticipationConfig:
+    """Configuration for study participation and onboarding flow."""
+    
+    # Study Flow Configuration
+    study_participation_enabled: bool = True
+    pseudonym_min_length: int = 3
+    pseudonym_max_length: int = 50
+    required_consents: list[str] = field(
+        default_factory=lambda: ["data_protection", "ai_interaction", "study_participation"]
+    )
+    
+    # Survey Configuration
+    survey_file_path: str = "config/study_survey.xlsx"
+    survey_fallback_enabled: bool = True
+    survey_validation_strict: bool = True
+    
+    # Chat and PALD Configuration
+    max_feedback_rounds: int = 3
+    pald_consistency_threshold: float = 0.8
+    pald_consistency_max_iterations: int = 5
+    enable_consistency_check: bool = True
+    pald_analysis_deferred: bool = False
+    
+    # Image Generation Configuration
+    image_generation_timeout: int = 30
+    image_prompt_max_tokens: int = 77
+    image_storage_path: str = "generated_images/"
+    
+    # Database Configuration
+    database_reset_enabled: bool = False  # Safety flag
+    auto_migration_enabled: bool = True
+    foreign_key_checks_enabled: bool = True
+    
+    # Logging Configuration
+    log_all_interactions: bool = True
+    log_pald_processing: bool = True
+    log_performance_metrics: bool = True
+    audit_trail_enabled: bool = True
+    
+    # Error Handling Configuration
+    max_retries: int = 3
+    backoff_multiplier: float = 2.0
+    circuit_breaker_threshold: int = 5
+    fallback_enabled: bool = True
+    user_notification_required: bool = True
+    
+    # Data Privacy Configuration
+    data_retention_days: int = 365
+    anonymization_enabled: bool = True
+    cascade_deletion_enabled: bool = True
+    
+    def __post_init__(self):
+        """Override from environment variables."""
+        if env_enabled := os.getenv("STUDY_PARTICIPATION_ENABLED"):
+            self.study_participation_enabled = env_enabled.lower() == "true"
+        if env_min_len := os.getenv("PSEUDONYM_MIN_LENGTH"):
+            self.pseudonym_min_length = int(env_min_len)
+        if env_max_len := os.getenv("PSEUDONYM_MAX_LENGTH"):
+            self.pseudonym_max_length = int(env_max_len)
+        if env_consents := os.getenv("REQUIRED_CONSENTS"):
+            self.required_consents = env_consents.split(",")
+        if env_survey_path := os.getenv("SURVEY_FILE_PATH"):
+            self.survey_file_path = env_survey_path
+        if env_survey_fallback := os.getenv("SURVEY_FALLBACK_ENABLED"):
+            self.survey_fallback_enabled = env_survey_fallback.lower() == "true"
+        if env_survey_strict := os.getenv("SURVEY_VALIDATION_STRICT"):
+            self.survey_validation_strict = env_survey_strict.lower() == "true"
+        if env_max_rounds := os.getenv("MAX_FEEDBACK_ROUNDS"):
+            self.max_feedback_rounds = int(env_max_rounds)
+        if env_threshold := os.getenv("PALD_CONSISTENCY_THRESHOLD"):
+            self.pald_consistency_threshold = float(env_threshold)
+        if env_max_iter := os.getenv("PALD_CONSISTENCY_MAX_ITERATIONS"):
+            self.pald_consistency_max_iterations = int(env_max_iter)
+        if env_consistency := os.getenv("ENABLE_CONSISTENCY_CHECK"):
+            self.enable_consistency_check = env_consistency.lower() == "true"
+        if env_deferred := os.getenv("PALD_ANALYSIS_DEFERRED"):
+            self.pald_analysis_deferred = env_deferred.lower() == "true"
+        if env_img_timeout := os.getenv("IMAGE_GENERATION_TIMEOUT"):
+            self.image_generation_timeout = int(env_img_timeout)
+        if env_img_tokens := os.getenv("IMAGE_PROMPT_MAX_TOKENS"):
+            self.image_prompt_max_tokens = int(env_img_tokens)
+        if env_img_path := os.getenv("IMAGE_STORAGE_PATH"):
+            self.image_storage_path = env_img_path
+        if env_db_reset := os.getenv("DATABASE_RESET_ENABLED"):
+            self.database_reset_enabled = env_db_reset.lower() == "true"
+        if env_auto_migration := os.getenv("AUTO_MIGRATION_ENABLED"):
+            self.auto_migration_enabled = env_auto_migration.lower() == "true"
+        if env_fk_checks := os.getenv("FOREIGN_KEY_CHECKS_ENABLED"):
+            self.foreign_key_checks_enabled = env_fk_checks.lower() == "true"
+        if env_log_interactions := os.getenv("LOG_ALL_INTERACTIONS"):
+            self.log_all_interactions = env_log_interactions.lower() == "true"
+        if env_log_pald := os.getenv("LOG_PALD_PROCESSING"):
+            self.log_pald_processing = env_log_pald.lower() == "true"
+        if env_log_perf := os.getenv("LOG_PERFORMANCE_METRICS"):
+            self.log_performance_metrics = env_log_perf.lower() == "true"
+        if env_audit := os.getenv("AUDIT_TRAIL_ENABLED"):
+            self.audit_trail_enabled = env_audit.lower() == "true"
+        if env_retention := os.getenv("DATA_RETENTION_DAYS"):
+            self.data_retention_days = int(env_retention)
+        if env_anon := os.getenv("ANONYMIZATION_ENABLED"):
+            self.anonymization_enabled = env_anon.lower() == "true"
+        if env_cascade := os.getenv("CASCADE_DELETION_ENABLED"):
+            self.cascade_deletion_enabled = env_cascade.lower() == "true"
+    
+    def validate(self) -> list[str]:
+        """Validate configuration parameters and return list of errors."""
+        errors = []
+        
+        if self.pseudonym_min_length < 1:
+            errors.append("pseudonym_min_length must be at least 1")
+        if self.pseudonym_max_length < self.pseudonym_min_length:
+            errors.append("pseudonym_max_length must be >= pseudonym_min_length")
+        if self.max_feedback_rounds < 1:
+            errors.append("max_feedback_rounds must be at least 1")
+        if not (0.0 <= self.pald_consistency_threshold <= 1.0):
+            errors.append("pald_consistency_threshold must be between 0.0 and 1.0")
+        if self.pald_consistency_max_iterations < 1:
+            errors.append("pald_consistency_max_iterations must be at least 1")
+        if self.image_generation_timeout < 1:
+            errors.append("image_generation_timeout must be at least 1 second")
+        if self.image_prompt_max_tokens < 1:
+            errors.append("image_prompt_max_tokens must be at least 1")
+        if not self.required_consents:
+            errors.append("required_consents cannot be empty")
+        if self.data_retention_days < 1:
+            errors.append("data_retention_days must be at least 1")
+        
+        return errors
+
+
+@dataclass
 class Config:
     """Main configuration class that aggregates all configuration sections."""
 
@@ -365,6 +517,7 @@ class Config:
     feature_flags: FeatureFlags = field(default_factory=FeatureFlags)
     pald_boundary: PALDBoundaryConfig = field(default_factory=PALDBoundaryConfig)
     pald_enhancement: PALDEnhancementConfig = field(default_factory=PALDEnhancementConfig)
+    study_participation: StudyParticipationConfig = field(default_factory=StudyParticipationConfig)
 
     # Application settings
     app_name: str = "GITTE"
@@ -401,6 +554,32 @@ class Config:
                 raise ValueError("SECRET_KEY must be set in production")
             if self.security.encryption_key == "dev-encryption-key-change-in-production":
                 raise ValueError("ENCRYPTION_KEY must be set in production")
+        
+        # Validate study participation configuration
+        study_errors = self.study_participation.validate()
+        if study_errors:
+            raise ValueError(f"Study participation configuration errors: {', '.join(study_errors)}")
+    
+    def apply_environment_overrides(self) -> None:
+        """Apply environment-specific configuration overrides."""
+        if self.environment == "development":
+            self.study_participation.database_reset_enabled = True
+            self.study_participation.survey_validation_strict = False
+            self.study_participation.max_feedback_rounds = 1
+            self.study_participation.log_performance_metrics = True
+        
+        elif self.environment == "testing":
+            self.study_participation.pseudonym_min_length = 1
+            self.study_participation.pald_consistency_max_iterations = 2
+            self.study_participation.image_generation_timeout = 5
+            self.study_participation.max_feedback_rounds = 1
+            self.study_participation.survey_validation_strict = False
+        
+        elif self.environment == "production":
+            self.study_participation.database_reset_enabled = False
+            self.study_participation.log_performance_metrics = True
+            self.study_participation.audit_trail_enabled = True
+            self.study_participation.survey_validation_strict = True
 
 
 # Initialize configuration with environment-specific overrides
@@ -418,12 +597,16 @@ def initialize_config() -> Config:
         environment = os.getenv("ENVIRONMENT", "development")
         config_with_env = environment_manager.apply_environment(base_config, environment)
 
+        # Apply study participation environment overrides
+        config_with_env.apply_environment_overrides()
+
         # Validate configuration
         config_with_env.validate()
 
         return config_with_env
     except ImportError:
         # Fallback if environment management is not available
+        base_config.apply_environment_overrides()
         base_config.validate()
         return base_config
 

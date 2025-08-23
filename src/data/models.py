@@ -617,6 +617,357 @@ class UXAuditLog(Base):
     def __repr__(self):
         return f"<UXAuditLog(id={self.id}, event={self.event_type}, success={self.success})>"
 
+# === STUDY PARTICIPATION MODELS ===
+
+class Pseudonym(Base):
+    """Pseudonym model for study participation identity management.
+    
+    Note: This model does NOT have a direct foreign key to users table
+    to ensure privacy separation. The mapping is handled separately
+    with appropriate access controls.
+    """
+
+    __tablename__ = "pseudonyms"
+
+    pseudonym_id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
+    pseudonym_text = Column(String(255), unique=True, nullable=False, index=True)
+    pseudonym_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=func.now())
+    is_active = Column(Boolean, nullable=False, default=True)
+
+    # Relationships - NO direct relationship to User model for privacy
+    study_consent_records = relationship(
+        "StudyConsentRecord", back_populates="pseudonym", cascade="all, delete-orphan"
+    )
+    study_survey_responses = relationship(
+        "StudySurveyResponse", back_populates="pseudonym", cascade="all, delete-orphan"
+    )
+    chat_messages = relationship(
+        "ChatMessage", back_populates="pseudonym", cascade="all, delete-orphan"
+    )
+    study_pald_data = relationship(
+        "StudyPALDData", back_populates="pseudonym", cascade="all, delete-orphan"
+    )
+    generated_images = relationship(
+        "GeneratedImage", back_populates="pseudonym", cascade="all, delete-orphan"
+    )
+    feedback_records = relationship(
+        "FeedbackRecord", back_populates="pseudonym", cascade="all, delete-orphan"
+    )
+    interaction_logs = relationship(
+        "InteractionLog", back_populates="pseudonym", cascade="all, delete-orphan"
+    )
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_pseudonym_text", "pseudonym_text"),
+        Index("idx_pseudonym_active", "is_active"),
+        Index("idx_pseudonym_hash", "pseudonym_hash"),
+    )
+
+    def __repr__(self):
+        return f"<Pseudonym(pseudonym_id={self.pseudonym_id}, pseudonym_text={self.pseudonym_text}, is_active={self.is_active})>"
+
+
+class PseudonymMapping(Base):
+    """Pseudonym mapping model for secure user-pseudonym association.
+    
+    This table provides the mapping between user authentication and pseudonyms
+    with appropriate access controls. It should be accessed only by authorized
+    admin functions and never exposed in research data exports.
+    """
+
+    __tablename__ = "pseudonym_mappings"
+
+    mapping_id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
+    user_id = Column(PostgresUUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    pseudonym_id = Column(PostgresUUID(as_uuid=True), ForeignKey("pseudonyms.pseudonym_id"), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=func.now())
+    created_by = Column(String(100), nullable=False)  # Admin user who created the mapping
+    access_level = Column(String(50), nullable=False, default="admin_only")  # Access control level
+
+    # Relationships
+    user = relationship("User")
+    pseudonym = relationship("Pseudonym")
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_pseudonym_mapping_user", "user_id"),
+        Index("idx_pseudonym_mapping_pseudonym", "pseudonym_id"),
+        Index("idx_pseudonym_mapping_created", "created_at"),
+        # Ensure one-to-one mapping between user and pseudonym
+        Index("idx_pseudonym_mapping_unique_user", "user_id", unique=True),
+        Index("idx_pseudonym_mapping_unique_pseudonym", "pseudonym_id", unique=True),
+    )
+
+    def __repr__(self):
+        return f"<PseudonymMapping(mapping_id={self.mapping_id}, access_level={self.access_level})>"
+
+
+class StudyConsentType(str, Enum):
+    """Study consent type enumeration."""
+
+    DATA_PROTECTION = "data_protection"
+    AI_INTERACTION = "ai_interaction"
+    STUDY_PARTICIPATION = "study_participation"
+
+
+class StudyConsentRecord(Base):
+    """Study consent record model for research participation consent."""
+
+    __tablename__ = "study_consent_records"
+
+    consent_id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
+    pseudonym_id = Column(
+        PostgresUUID(as_uuid=True), ForeignKey("pseudonyms.pseudonym_id"), nullable=False
+    )
+    consent_type = Column(String(100), nullable=False)
+    granted = Column(Boolean, nullable=False)
+    version = Column(String(20), nullable=False)
+    granted_at = Column(DateTime, nullable=False, default=func.now())
+    revoked_at = Column(DateTime, nullable=True)
+
+    # Relationships
+    pseudonym = relationship("Pseudonym", back_populates="study_consent_records")
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_study_consent_pseudonym_type", "pseudonym_id", "consent_type"),
+        Index("idx_study_consent_granted_at", "granted_at"),
+    )
+
+    @validates("consent_type")
+    def validate_consent_type(self, key, consent_type):
+        """Validate study consent type."""
+        if consent_type not in [c.value for c in StudyConsentType]:
+            raise ValueError(f"Invalid study consent type: {consent_type}")
+        return consent_type
+
+    def __repr__(self):
+        return f"<StudyConsentRecord(consent_id={self.consent_id}, pseudonym_id={self.pseudonym_id}, type={self.consent_type}, granted={self.granted})>"
+
+
+class StudySurveyResponse(Base):
+    """Study survey response model for dynamic survey data collection."""
+
+    __tablename__ = "study_survey_responses"
+
+    response_id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
+    pseudonym_id = Column(
+        PostgresUUID(as_uuid=True), ForeignKey("pseudonyms.pseudonym_id"), nullable=False
+    )
+    survey_version = Column(String(20), nullable=False)
+    responses = Column(JSONColumn, nullable=False)
+    completed_at = Column(DateTime, nullable=False, default=func.now())
+
+    # Relationships
+    pseudonym = relationship("Pseudonym", back_populates="study_survey_responses")
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_study_survey_pseudonym", "pseudonym_id"),
+        Index("idx_study_survey_version", "survey_version"),
+        Index("idx_study_survey_completed", "completed_at"),
+    )
+
+    def __repr__(self):
+        return f"<StudySurveyResponse(response_id={self.response_id}, pseudonym_id={self.pseudonym_id}, survey_version={self.survey_version})>"
+
+
+class ChatMessageType(str, Enum):
+    """Chat message type enumeration."""
+
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+
+
+class ChatMessage(Base):
+    """Chat message model for study participation chat interactions."""
+
+    __tablename__ = "chat_messages"
+
+    message_id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
+    pseudonym_id = Column(
+        PostgresUUID(as_uuid=True), ForeignKey("pseudonyms.pseudonym_id"), nullable=False
+    )
+    session_id = Column(PostgresUUID(as_uuid=True), nullable=False, index=True)
+    message_type = Column(String(20), nullable=False)
+    content = Column(Text, nullable=False)
+    pald_data = Column(JSONColumn, nullable=True)
+    timestamp = Column(DateTime, nullable=False, default=func.now())
+
+    # Relationships
+    pseudonym = relationship("Pseudonym", back_populates="chat_messages")
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_chat_pseudonym", "pseudonym_id"),
+        Index("idx_chat_session", "session_id"),
+        Index("idx_chat_timestamp", "timestamp"),
+        Index("idx_chat_type", "message_type"),
+    )
+
+    @validates("message_type")
+    def validate_message_type(self, key, message_type):
+        """Validate chat message type."""
+        if message_type not in [t.value for t in ChatMessageType]:
+            raise ValueError(f"Invalid message type: {message_type}")
+        return message_type
+
+    def __repr__(self):
+        return f"<ChatMessage(message_id={self.message_id}, pseudonym_id={self.pseudonym_id}, session_id={self.session_id}, type={self.message_type})>"
+
+
+class StudyPALDType(str, Enum):
+    """Study PALD type enumeration."""
+
+    INPUT = "input"
+    DESCRIPTION = "description"
+    FEEDBACK = "feedback"
+
+
+class StudyPALDData(Base):
+    """Study PALD data model for research-specific PALD processing."""
+
+    __tablename__ = "study_pald_data"
+
+    pald_id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
+    pseudonym_id = Column(
+        PostgresUUID(as_uuid=True), ForeignKey("pseudonyms.pseudonym_id"), nullable=False
+    )
+    session_id = Column(PostgresUUID(as_uuid=True), nullable=False, index=True)
+    pald_content = Column(JSONColumn, nullable=False)
+    pald_type = Column(String(20), nullable=False)
+    consistency_score = Column(Float, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=func.now())
+
+    # Relationships
+    pseudonym = relationship("Pseudonym", back_populates="study_pald_data")
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_study_pald_pseudonym", "pseudonym_id"),
+        Index("idx_study_pald_session", "session_id"),
+        Index("idx_study_pald_type", "pald_type"),
+        Index("idx_study_pald_created", "created_at"),
+    )
+
+    @validates("pald_type")
+    def validate_pald_type(self, key, pald_type):
+        """Validate study PALD type."""
+        if pald_type not in [t.value for t in StudyPALDType]:
+            raise ValueError(f"Invalid study PALD type: {pald_type}")
+        return pald_type
+
+    def __repr__(self):
+        return f"<StudyPALDData(pald_id={self.pald_id}, pseudonym_id={self.pseudonym_id}, session_id={self.session_id}, type={self.pald_type})>"
+
+
+class GeneratedImage(Base):
+    """Generated image model for study participation image generation."""
+
+    __tablename__ = "generated_images"
+
+    image_id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
+    pseudonym_id = Column(
+        PostgresUUID(as_uuid=True), ForeignKey("pseudonyms.pseudonym_id"), nullable=False
+    )
+    session_id = Column(PostgresUUID(as_uuid=True), nullable=False, index=True)
+    image_path = Column(String(500), nullable=False)
+    prompt = Column(Text, nullable=False)
+    pald_source_id = Column(
+        PostgresUUID(as_uuid=True), ForeignKey("study_pald_data.pald_id"), nullable=True
+    )
+    generation_parameters = Column(JSONColumn, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=func.now())
+
+    # Relationships
+    pseudonym = relationship("Pseudonym", back_populates="generated_images")
+    pald_source = relationship("StudyPALDData")
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_generated_image_pseudonym", "pseudonym_id"),
+        Index("idx_generated_image_session", "session_id"),
+        Index("idx_generated_image_created", "created_at"),
+        Index("idx_generated_image_pald_source", "pald_source_id"),
+    )
+
+    def __repr__(self):
+        return f"<GeneratedImage(image_id={self.image_id}, pseudonym_id={self.pseudonym_id}, session_id={self.session_id})>"
+
+
+class FeedbackRecord(Base):
+    """Feedback record model for study participation feedback collection."""
+
+    __tablename__ = "feedback_records"
+
+    feedback_id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
+    pseudonym_id = Column(
+        PostgresUUID(as_uuid=True), ForeignKey("pseudonyms.pseudonym_id"), nullable=False
+    )
+    session_id = Column(PostgresUUID(as_uuid=True), nullable=False, index=True)
+    image_id = Column(
+        PostgresUUID(as_uuid=True), ForeignKey("generated_images.image_id"), nullable=True
+    )
+    feedback_text = Column(Text, nullable=False)
+    feedback_pald = Column(JSONColumn, nullable=True)
+    round_number = Column(Integer, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=func.now())
+
+    # Relationships
+    pseudonym = relationship("Pseudonym", back_populates="feedback_records")
+    image = relationship("GeneratedImage")
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_feedback_pseudonym", "pseudonym_id"),
+        Index("idx_feedback_session", "session_id"),
+        Index("idx_feedback_image", "image_id"),
+        Index("idx_feedback_round", "round_number"),
+        Index("idx_feedback_created", "created_at"),
+    )
+
+    def __repr__(self):
+        return f"<FeedbackRecord(feedback_id={self.feedback_id}, pseudonym_id={self.pseudonym_id}, session_id={self.session_id}, round={self.round_number})>"
+
+
+class InteractionLog(Base):
+    """Interaction log model for comprehensive study participation logging."""
+
+    __tablename__ = "interaction_logs"
+
+    log_id = Column(PostgresUUID(as_uuid=True), primary_key=True, default=uuid4)
+    pseudonym_id = Column(
+        PostgresUUID(as_uuid=True), ForeignKey("pseudonyms.pseudonym_id"), nullable=False
+    )
+    session_id = Column(PostgresUUID(as_uuid=True), nullable=False, index=True)
+    interaction_type = Column(String(50), nullable=False)
+    prompt = Column(Text, nullable=True)
+    response = Column(Text, nullable=True)
+    model_used = Column(String(100), nullable=False)
+    parameters = Column(JSONColumn, nullable=False)
+    token_usage = Column(JSONColumn, nullable=True)
+    latency_ms = Column(Integer, nullable=False)
+    timestamp = Column(DateTime, nullable=False, default=func.now())
+
+    # Relationships
+    pseudonym = relationship("Pseudonym", back_populates="interaction_logs")
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_interaction_pseudonym", "pseudonym_id"),
+        Index("idx_interaction_session", "session_id"),
+        Index("idx_interaction_type", "interaction_type"),
+        Index("idx_interaction_model", "model_used"),
+        Index("idx_interaction_timestamp", "timestamp"),
+    )
+
+    def __repr__(self):
+        return f"<InteractionLog(log_id={self.log_id}, pseudonym_id={self.pseudonym_id}, session_id={self.session_id}, type={self.interaction_type})>"
+
+
 # === BEGIN PALD ENHANCEMENT (from split_02_src_data_models.py.patch) ===
 class BiasAnalysisJobStatus(str, Enum):
     """Bias analysis job status enumeration."""

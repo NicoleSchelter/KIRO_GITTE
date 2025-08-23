@@ -1,31 +1,354 @@
 """
-Survey UI components for GITTE system.
-Provides Streamlit components for collecting minimal personalization data.
+Enhanced Survey UI components for GITTE system.
+Provides Streamlit components for dynamic survey rendering and study participation.
 """
 
 import logging
-from typing import Any
+from typing import Any, Dict, List, Optional
 from uuid import UUID
+from pathlib import Path
 
 import streamlit as st
 
-from config.config import get_text
+from config.config import get_text, config
 from src.data.database import get_session  
 from src.services.survey_service import SurveyService
+from src.logic.survey_logic import SurveyLogic, SurveyDefinition, SurveyQuestion
 from src.ui.tooltip_integration import form_submit_button
-from src.logic.pald_boundary import PALDBoundaryEnforcer
 
 logger = logging.getLogger(__name__)
 
 
 class SurveyUI:
-    """UI components for personalization survey."""
+    """Enhanced UI components for dynamic survey rendering and study participation."""
 
     def __init__(self):
-        # Initialize boundary enforcer for validation
-        from src.services.pald_schema_registry_service import PALDSchemaRegistryService
-        from config.config import config
-        # Note: These will be properly injected in production via dependency injection
+        """Initialize survey UI with dynamic survey capabilities."""
+        self.survey_service = None
+        self.survey_logic = None
+    
+    def _get_survey_logic(self) -> SurveyLogic:
+        """Get survey logic instance with proper dependency injection."""
+        # Create fresh instances for each request to ensure proper session handling
+        db_session = get_session()
+        survey_service = SurveyService(db_session)
+        return SurveyLogic(survey_service)
+    
+    def render_dynamic_survey(
+        self, 
+        pseudonym_id: UUID, 
+        survey_file_path: Optional[str] = None
+    ) -> Dict[str, Any] | None:
+        """
+        Render dynamic survey loaded from CSV/Excel file for study participation.
+        
+        Args:
+            pseudonym_id: Participant pseudonym ID
+            survey_file_path: Path to survey definition file (defaults to config)
+            
+        Returns:
+            Survey responses if completed, None otherwise
+        """
+        try:
+            # Use default survey file if not specified
+            if survey_file_path is None:
+                survey_file_path = getattr(config, 'SURVEY_FILE_PATH', 'config/sample_survey.csv')
+            
+            # Load survey definition
+            survey_logic = self._get_survey_logic()
+            
+            # Check if survey file exists
+            if not Path(survey_file_path).exists():
+                st.error(f"Survey file not found: {survey_file_path}")
+                if getattr(config, 'SURVEY_FALLBACK_ENABLED', True):
+                    st.info("Using fallback personalization survey...")
+                    return self.render_personalization_survey(pseudonym_id)
+                return None
+            
+            try:
+                survey_definition = survey_logic.load_survey_definition(survey_file_path)
+            except Exception as e:
+                logger.error(f"Failed to load survey definition: {e}")
+                st.error(f"Failed to load survey: {str(e)}")
+                if getattr(config, 'SURVEY_FALLBACK_ENABLED', True):
+                    st.info("Using fallback personalization survey...")
+                    return self.render_personalization_survey(pseudonym_id)
+                return None
+            
+            # Render survey UI
+            return self._render_survey_form(pseudonym_id, survey_definition)
+            
+        except Exception as e:
+            logger.exception(f"Error rendering dynamic survey: {e}")
+            st.error("An error occurred while loading the survey. Please try again.")
+            return None
+    
+    def _render_survey_form(
+        self, 
+        pseudonym_id: UUID, 
+        survey_definition: SurveyDefinition
+    ) -> Dict[str, Any] | None:
+        """
+        Render survey form based on survey definition.
+        
+        Args:
+            pseudonym_id: Participant pseudonym ID
+            survey_definition: Survey definition to render
+            
+        Returns:
+            Survey responses if submitted, None otherwise
+        """
+        # Display survey header
+        st.title(survey_definition.title)
+        if survey_definition.description:
+            st.write(survey_definition.description)
+        
+        # Initialize session state for form data
+        form_key = f"dynamic_survey_{survey_definition.survey_id}"
+        if f"{form_key}_responses" not in st.session_state:
+            st.session_state[f"{form_key}_responses"] = {}
+        
+        with st.form(form_key):
+            responses = {}
+            validation_errors = []
+            
+            # Render each question
+            for question in survey_definition.questions:
+                try:
+                    response_value = self._render_question(question)
+                    if response_value is not None:
+                        responses[question.question_id] = response_value
+                except Exception as e:
+                    logger.error(f"Error rendering question {question.question_id}: {e}")
+                    st.error(f"Error rendering question: {question.question_text}")
+            
+            # Submit buttons
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                submit_button = form_submit_button("Submit Survey", type="primary")
+            
+            with col2:
+                skip_button = form_submit_button("Skip Survey")
+        
+        # Handle form submission
+        if submit_button:
+            return self._handle_survey_submission(pseudonym_id, responses, survey_definition)
+        elif skip_button:
+            return self._handle_survey_skip(pseudonym_id)
+        
+        return None
+    
+    def _render_question(self, question: SurveyQuestion) -> Any:
+        """
+        Render individual survey question based on type.
+        
+        Args:
+            question: Question definition
+            
+        Returns:
+            User response value
+        """
+        # Add required indicator
+        label = question.question_text
+        if question.required:
+            label += " *"
+        
+        # Render based on question type
+        if question.type == "text":
+            return st.text_area(
+                label,
+                key=f"q_{question.question_id}",
+                help="This field is required" if question.required else None
+            )
+        
+        elif question.type == "number":
+            return st.number_input(
+                label,
+                key=f"q_{question.question_id}",
+                help="This field is required" if question.required else None
+            )
+        
+        elif question.type == "choice":
+            if not question.options:
+                st.error(f"No options provided for choice question: {question.question_text}")
+                return None
+            
+            # Add empty option for non-required questions
+            options = question.options.copy()
+            if not question.required:
+                options = [""] + options
+            
+            return st.selectbox(
+                label,
+                options=options,
+                key=f"q_{question.question_id}",
+                help="This field is required" if question.required else None
+            )
+        
+        elif question.type == "multi-choice":
+            if not question.options:
+                st.error(f"No options provided for multi-choice question: {question.question_text}")
+                return None
+            
+            return st.multiselect(
+                label,
+                options=question.options,
+                key=f"q_{question.question_id}",
+                help="This field is required" if question.required else "Select all that apply"
+            )
+        
+        else:
+            st.error(f"Unsupported question type: {question.type}")
+            return None
+    
+    def _handle_survey_submission(
+        self, 
+        pseudonym_id: UUID, 
+        responses: Dict[str, Any], 
+        survey_definition: SurveyDefinition
+    ) -> Dict[str, Any] | None:
+        """
+        Handle survey submission with validation and storage.
+        
+        Args:
+            pseudonym_id: Participant pseudonym ID
+            responses: User responses
+            survey_definition: Survey definition for validation
+            
+        Returns:
+            Survey responses if successful, None otherwise
+        """
+        try:
+            # Get survey logic instance
+            survey_logic = self._get_survey_logic()
+            
+            # Validate responses
+            validation_result = survey_logic.validate_survey_responses(responses, survey_definition)
+            
+            if not validation_result.is_valid:
+                # Display validation errors
+                st.error("Please correct the following errors:")
+                for error in validation_result.errors:
+                    st.error(f"• {error}")
+                return None
+            
+            # Display warnings if any
+            if validation_result.warnings:
+                for warning in validation_result.warnings:
+                    st.warning(f"• {warning}")
+            
+            # Process submission
+            submission_result = survey_logic.process_survey_submission(
+                pseudonym_id, responses, survey_definition
+            )
+            
+            if submission_result.success:
+                st.success("Survey submitted successfully!")
+                st.balloons()
+                
+                # Create response data for return
+                survey_data = {
+                    "survey_id": survey_definition.survey_id,
+                    "survey_version": survey_definition.version,
+                    "responses": responses,
+                    "completed_at": st.session_state.get("current_time", ""),
+                    "survey_skipped": False
+                }
+                
+                logger.info(f"Dynamic survey completed for pseudonym {pseudonym_id}")
+                return survey_data
+            else:
+                # Display submission errors
+                st.error("Failed to submit survey:")
+                for error in submission_result.errors:
+                    st.error(f"• {error}")
+                return None
+                
+        except Exception as e:
+            logger.exception(f"Error handling survey submission: {e}")
+            st.error("An error occurred while submitting the survey. Please try again.")
+            return None
+    
+    def _handle_survey_skip(self, pseudonym_id: UUID) -> Dict[str, Any]:
+        """
+        Handle survey skip with default responses.
+        
+        Args:
+            pseudonym_id: Participant pseudonym ID
+            
+        Returns:
+            Default survey data
+        """
+        try:
+            # Create default survey data
+            default_data = {
+                "survey_id": "default_survey",
+                "survey_version": "1.0",
+                "responses": {
+                    "survey_skipped": True,
+                    "default_preferences": "applied"
+                },
+                "completed_at": st.session_state.get("current_time", ""),
+                "survey_skipped": True
+            }
+            
+            st.info("Survey skipped. Default preferences have been applied.")
+            logger.info(f"Dynamic survey skipped for pseudonym {pseudonym_id}")
+            return default_data
+            
+        except Exception as e:
+            logger.exception(f"Error handling survey skip: {e}")
+            st.error("An error occurred while skipping the survey. Please try again.")
+            return None
+    
+    def render_survey_validation_preview(self, survey_file_path: str) -> bool:
+        """
+        Render survey validation preview for admin/testing purposes.
+        
+        Args:
+            survey_file_path: Path to survey file to validate
+            
+        Returns:
+            True if survey is valid, False otherwise
+        """
+        try:
+            st.subheader("Survey Validation Preview")
+            
+            if not Path(survey_file_path).exists():
+                st.error(f"Survey file not found: {survey_file_path}")
+                return False
+            
+            # Load and validate survey
+            survey_logic = self._get_survey_logic()
+            survey_definition = survey_logic.load_survey_definition(survey_file_path)
+            
+            # Display survey info
+            st.success(f"✅ Survey loaded successfully!")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.write(f"**Survey ID:** {survey_definition.survey_id}")
+                st.write(f"**Title:** {survey_definition.title}")
+            with col2:
+                st.write(f"**Version:** {survey_definition.version}")
+                st.write(f"**Questions:** {len(survey_definition.questions)}")
+            
+            # Display questions
+            st.write("**Questions:**")
+            for i, question in enumerate(survey_definition.questions, 1):
+                with st.expander(f"Question {i}: {question.question_text}"):
+                    st.write(f"**Type:** {question.type}")
+                    st.write(f"**Required:** {'Yes' if question.required else 'No'}")
+                    if question.options:
+                        st.write(f"**Options:** {', '.join(question.options)}")
+            
+            return True
+            
+        except Exception as e:
+            st.error(f"Survey validation failed: {str(e)}")
+            logger.error(f"Survey validation error: {e}")
+            return False
 
     def render_personalization_survey(self, user_id: UUID) -> dict[str, Any] | None:
         """
@@ -544,6 +867,16 @@ survey_ui = SurveyUI()
 def render_personalization_survey(user_id: UUID) -> dict[str, Any] | None:
     """Render personalization survey."""
     return survey_ui.render_personalization_survey(user_id)
+
+
+def render_dynamic_survey(pseudonym_id: UUID, survey_file_path: Optional[str] = None) -> Dict[str, Any] | None:
+    """Render dynamic survey for study participation."""
+    return survey_ui.render_dynamic_survey(pseudonym_id, survey_file_path)
+
+
+def render_survey_validation_preview(survey_file_path: str) -> bool:
+    """Render survey validation preview."""
+    return survey_ui.render_survey_validation_preview(survey_file_path)
 
 
 def render_survey_summary(survey_data: dict[str, Any]) -> None:
