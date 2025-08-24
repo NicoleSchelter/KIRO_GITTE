@@ -290,11 +290,12 @@ class ConsentUI:
         }
         return descriptions.get(consent_type, f"Consent for {consent_type.value}")
 
-    def render_onboarding_consent(self, pseudonym_id: UUID) -> bool:
+    def render_onboarding_consent(self, user_id: UUID | None = None, pseudonym_id: UUID | None = None) -> bool:
         """Render onboarding-specific consent form for initial setup.
         
         Args:
-            pseudonym_id: Pseudonym identifier for the participant
+            user_id: User identifier (for consent-first flow)
+            pseudonym_id: Pseudonym identifier (for pseudonym-first flow)
             
         Returns:
             bool: True if consent was granted and saved, False otherwise
@@ -314,8 +315,12 @@ class ConsentUI:
             if "consent_form_state" not in st.session_state:
                 st.session_state.consent_form_state = {}
 
-            # Get current consent status once, outside the form
-            current_status = self.consent_service.get_consent_status(pseudonym_id)
+            # Get current consent status - handle both user_id and pseudonym_id
+            if pseudonym_id:
+                current_status = self.consent_service.get_consent_status(pseudonym_id)
+            else:
+                # For consent-first flow, start with empty status
+                current_status = {}
 
             # Create the consent form using centralized configuration
             st.subheader("Privacy Consent Form")
@@ -403,27 +408,44 @@ class ConsentUI:
                     for consent_key, granted in st.session_state.consent_form_state.items():
                         final_consent_dict[consent_key] = granted
                     
-                    # Process consent collection with normalization
-                    result = self.consent_service.process_consent_collection(
-                        pseudonym_id, 
-                        final_consent_dict
-                    )
-                    
-                    if result["success"] and result["can_proceed"]:
-                        st.success("✅ Consent preferences saved successfully!")
-                        st.info("Continuing with onboarding...")
+                    # Handle consent-first flow (buffer consents in session state)
+                    if user_id and not pseudonym_id:
+                        # Store consents in session state for later processing
+                        st.session_state.buffered_consents = final_consent_dict
+                        st.success("✅ Consent preferences recorded!")
+                        st.info("Proceeding to pseudonym creation...")
                         
                         # Clear the form state
                         del st.session_state.consent_form_state
                         
                         return True
+                    
+                    # Handle pseudonym-first flow (immediate processing)
+                    elif pseudonym_id:
+                        # Process consent collection with normalization
+                        result = self.consent_service.process_consent_collection(
+                            pseudonym_id, 
+                            final_consent_dict
+                        )
+                        
+                        if result["success"] and result["can_proceed"]:
+                            st.success("✅ Consent preferences saved successfully!")
+                            st.info("Continuing with onboarding...")
+                            
+                            # Clear the form state
+                            del st.session_state.consent_form_state
+                            
+                            return True
+                        else:
+                            failed_consents = result.get("failed_consents", [])
+                            st.error(f"Failed to save some consents: {', '.join(failed_consents)}")
+                            return False
                     else:
-                        failed_consents = result.get("failed_consents", [])
-                        st.error(f"Failed to save some consents: {', '.join(failed_consents)}")
+                        st.error("Invalid onboarding state - missing user or pseudonym ID")
                         return False
                     
                 except ConsentError as e:
-                    logger.error(f"Error saving onboarding consent for pseudonym {pseudonym_id}: {e}")
+                    logger.error(f"Error saving onboarding consent: {e}")
                     st.error(f"Failed to save consent preferences: {e}")
                     return False
                     
@@ -433,7 +455,7 @@ class ConsentUI:
             return False
             
         except Exception as e:
-            logger.error(f"Error rendering onboarding consent for pseudonym {pseudonym_id}: {e}")
+            logger.error(f"Error rendering onboarding consent: {e}")
             st.error("Error loading consent form. Please refresh the page and try again.")
             
             # Show debug information if there's an error

@@ -1496,7 +1496,7 @@ class StudyConsentRepository(BaseRepository):
         version: str,
         metadata: dict[str, Any] | None = None,
     ) -> StudyConsentRecord | None:
-        """Create a new study consent record with FK validation."""
+        """Create a new study consent record with FK validation and idempotency."""
         try:
             from .models import StudyConsentRecord, StudyConsentType, Pseudonym
             from sqlalchemy.exc import IntegrityError
@@ -1527,6 +1527,30 @@ class StudyConsentRepository(BaseRepository):
                 logger.error(f"Pseudonym {pseudonym_id} does not exist")
                 raise MissingPseudonymError(f"Pseudonym {pseudonym_id} does not exist")
             
+            # Check for existing consent with same pseudonym_id, consent_type, version (idempotency)
+            existing_consent = self.session.query(StudyConsentRecord).filter(
+                and_(
+                    StudyConsentRecord.pseudonym_id == pseudonym_id,
+                    StudyConsentRecord.consent_type == consent_type.value,
+                    StudyConsentRecord.version == version
+                )
+            ).first()
+            
+            if existing_consent:
+                # Update existing record if different granted status
+                if existing_consent.granted != granted:
+                    existing_consent.granted = granted
+                    existing_consent.granted_at = datetime.utcnow()
+                    if not granted:
+                        existing_consent.revoked_at = datetime.utcnow()
+                    else:
+                        existing_consent.revoked_at = None
+                    self.session.flush()
+                
+                logger.info(f"Updated existing consent record for pseudonym {pseudonym_id}, type {consent_type.value}")
+                return existing_consent
+            
+            # Create new consent record
             consent = StudyConsentRecord(
                 pseudonym_id=pseudonym_id,
                 consent_type=consent_type.value,
@@ -1535,13 +1559,34 @@ class StudyConsentRepository(BaseRepository):
             )
             self.session.add(consent)
             self.session.flush()
+            
+            logger.info(f"Created new consent record for pseudonym {pseudonym_id}, type {consent_type.value}")
             return consent
             
         except IntegrityError as e:
-            logger.error(f"FK violation creating study consent record: {e}")
+            logger.error(f"Integrity violation creating study consent record: {e}")
             self.session.rollback()
-            from src.exceptions import MissingPseudonymError
-            raise MissingPseudonymError(f"Pseudonym {pseudonym_id} does not exist or FK constraint failed")
+            
+            # Check if it's a FK violation or uniqueness violation
+            if "pseudonym" in str(e).lower() or "foreign key" in str(e).lower():
+                from src.exceptions import MissingPseudonymError
+                raise MissingPseudonymError(f"Pseudonym {pseudonym_id} does not exist")
+            else:
+                # Uniqueness violation - try to get existing record
+                existing_consent = self.session.query(StudyConsentRecord).filter(
+                    and_(
+                        StudyConsentRecord.pseudonym_id == pseudonym_id,
+                        StudyConsentRecord.consent_type == consent_type.value,
+                        StudyConsentRecord.version == version
+                    )
+                ).first()
+                
+                if existing_consent:
+                    logger.info(f"Consent already exists for pseudonym {pseudonym_id}, type {consent_type.value}")
+                    return existing_consent
+                else:
+                    raise
+                    
         except Exception as e:
             logger.error(f"Error creating study consent record: {e}")
             self.session.rollback()

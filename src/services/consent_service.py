@@ -71,6 +71,7 @@ class ConsentService:
                     return result
         except Exception as e:
             logger.error(f"Service error recording consent: {e}")
+            # Don't reuse session after error - let it be cleaned up
             raise
         finally:
             self._session = None
@@ -217,21 +218,37 @@ class ConsentService:
             ConsentError: If consent processing fails
             MissingPseudonymError: If pseudonym does not exist
         """
-        try:
-            with get_session() as session:
-                # Begin explicit transaction for bulk consent operations
-                with session.begin():
-                    self._session = session
-                    consent_logic = self._get_consent_logic()
-                    result = consent_logic.process_consent_collection(pseudonym_id, consents)
-                    # Transaction commits automatically on successful exit
-                    return result
-        except Exception as e:
-            logger.error(f"Service error processing consent collection: {e}")
-            raise
-        finally:
-            self._session = None
-            self.consent_logic = None
+        # Use fresh session for each retry attempt
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                with get_session() as session:
+                    # Begin explicit transaction for bulk consent operations
+                    with session.begin():
+                        self._session = session
+                        consent_logic = self._get_consent_logic()
+                        result = consent_logic.process_consent_collection(pseudonym_id, consents)
+                        # Transaction commits automatically on successful exit
+                        return result
+            except Exception as e:
+                logger.error(f"Service error processing consent collection (attempt {attempt + 1}): {e}")
+                # Clean up session state before retry
+                self._session = None
+                self.consent_logic = None
+                
+                # Don't retry FK violations or validation errors
+                if "MissingPseudonymError" in str(type(e)) or "does not exist" in str(e):
+                    raise
+                    
+                # Retry transient errors only
+                if attempt == max_retries - 1:
+                    raise
+                else:
+                    logger.warning(f"Retrying consent collection after transient error: {e}")
+                    continue
+            finally:
+                self._session = None
+                self.consent_logic = None
 
     def check_consent_status(self, pseudonym_id: UUID) -> Dict[str, Any]:
         """
