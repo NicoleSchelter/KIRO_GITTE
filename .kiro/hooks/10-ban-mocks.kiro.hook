@@ -1,0 +1,21 @@
+{
+  "description": "Disallow unittest.mock where fakes or DI are mandated.",
+  "enabled": true,
+  "include": [
+    "tests/**",
+    "src/**"
+  ],
+  "name": "Ban Heavy Mocks",
+  "runCommand": {
+    "args": [
+      "-NoProfile",
+      "-Command",
+      "$ErrorActionPreference='Stop'; $hits = Get-ChildItem tests,src -Recurse -Include *.py | Select-String -SimpleMatch 'from unittest import mock','import unittest.mock','pytest-mock'; if ($hits) { $hits | ForEach-Object { $_.Path + ':' + $_.LineNumber + ' -> ' + $_.Line.Trim() } | Write-Error; exit 1 }"
+    ],
+    "shell": "pwsh"
+  },
+  "timeoutSeconds": 45,
+  "triggers": [
+    "preCommit"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "description": "Repo-wide audit for consent keys/enums: UI keys must match StudyConsentType; normalize aliases; forbid unknown keys.",
+  "enabled": true,
+  "include": [
+    "src/**",
+    "config/**"
+  ],
+  "name": "Consent Contract Audit",
+  "runCommand": {
+    "args": [
+      "-NoProfile",
+      "-Command",
+      "python scripts/audit_consent_keys.py --src src --config config/config.py --models src/data/models.py"
+    ],
+    "shell": "pwsh"
+  },
+  "timeoutSeconds": 180,
+  "triggers": [
+    "onSave",
+    "preCommit"
+  ]
+}

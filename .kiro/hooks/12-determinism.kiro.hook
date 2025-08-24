@@ -1,0 +1,21 @@
+{
+  "description": "Static check for unseeded randomness and time-dependent calls.",
+  "enabled": true,
+  "include": [
+    "src/**",
+    "tests/**"
+  ],
+  "name": "Determinism Guard",
+  "runCommand": {
+    "args": [
+      "-NoProfile",
+      "-Command",
+      "$ErrorActionPreference='Stop'; $files = Get-ChildItem src,tests -Recurse -Include *.py; $bad = @(); foreach ($f in $files) { $t = Get-Content $f.FullName -Raw; if ($t -match '\\brandom\\.(rand|shuffle|choice|random)\\b' -and $t -notmatch '\\brandom\\.seed\\(') { $bad += $f.FullName }; if ($t -match '\\bdatetime\\.now\\(' -and $t -notmatch 'freezegun|frozen_datetime') { $bad += $f.FullName } }; if ($bad.Count -gt 0) { $bad | Sort-Object -Unique | % { Write-Error ('Non-deterministic usage: ' + $_) }; exit 1 }"
+    ],
+    "shell": "pwsh"
+  },
+  "timeoutSeconds": 60,
+  "triggers": [
+    "preCommit"
+  ]
+}

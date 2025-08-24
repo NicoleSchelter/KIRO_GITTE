@@ -50,3 +50,12 @@ tests/
   - Exclude `gpu` by default
   - Run `-m "not slow and not e2e"` on main pipeline
   - Nightly can include slow/e2e
+
+## 8. Consent Contract Tests
+- Positive: alias normalization (e.g., "data_processing" → `StudyConsentType.data_protection`).
+- Negative: unknown key raises typed error with valid enum list in message.
+
+## 9. Consent FK Contract
+- When `study_consent_records` is written:
+  - Test must assert existence/ownership pre-check for `pseudonym_id`.
+  - Provide a red-path test where the pseudonym is missing → expect typed NotFound/Ownership error.

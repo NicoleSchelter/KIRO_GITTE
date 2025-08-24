@@ -1,0 +1,20 @@
+{
+  "description": "Strict mypy in critical folders; normal otherwise.",
+  "enabled": true,
+  "include": [
+    "src/**"
+  ],
+  "name": "Typecheck",
+  "runCommand": {
+    "args": [
+      "-NoProfile",
+      "-Command",
+      "$ErrorActionPreference='Stop'; if (-not (Get-Command mypy -ErrorAction SilentlyContinue)) { Write-Error 'mypy not found'; exit 2 }; mypy --pretty --show-error-codes src"
+    ],
+    "shell": "pwsh"
+  },
+  "timeoutSeconds": 240,
+  "triggers": [
+    "preCommit"
+  ]
+}

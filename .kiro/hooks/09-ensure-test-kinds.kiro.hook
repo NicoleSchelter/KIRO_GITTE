@@ -1,0 +1,20 @@
+{
+  "description": "Require unit/, integration/, e2e/ tests to be present and balanced.",
+  "enabled": true,
+  "include": [
+    "tests/**"
+  ],
+  "name": "Ensure Test Kinds",
+  "runCommand": {
+    "args": [
+      "-NoProfile",
+      "-Command",
+      "$ErrorActionPreference='Stop'; $paths=@('tests/unit','tests/integration','tests/e2e'); $missing=$paths | ? { -not (Test-Path $_) }; if ($missing) { Write-Error ('Missing test dirs: ' + ($missing -join ', ')); exit 1 }; $u=(Get-ChildItem tests/unit -Recurse -Include *test*.py -ErrorAction SilentlyContinue).Count; $i=(Get-ChildItem tests/integration -Recurse -Include *test*.py -ErrorAction SilentlyContinue).Count; $e=(Get-ChildItem tests/e2e -Recurse -Include *test*.py -ErrorAction SilentlyContinue).Count; if (($u+$i+$e) -eq 0 -or $u -eq 0 -or $i -eq 0) { Write-Error 'Insufficient test coverage across kinds (need at least 1 in unit and integration).'; exit 1 }"
+    ],
+    "shell": "pwsh"
+  },
+  "timeoutSeconds": 45,
+  "triggers": [
+    "preCommit"
+  ]
+}

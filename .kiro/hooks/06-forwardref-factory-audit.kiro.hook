@@ -1,0 +1,21 @@
+{
+  "description": "Detect forward type-hint issues & duplicate factories (get_*_service), suggest fix or fail.",
+  "enabled": true,
+  "include": [
+    "src/**"
+  ],
+  "name": "ForwardRef & Factory Audit",
+  "runCommand": {
+    "args": [
+      "-NoProfile",
+      "-Command",
+      "python scripts/audit_factories_forwardrefs.py --root src"
+    ],
+    "shell": "pwsh"
+  },
+  "timeoutSeconds": 180,
+  "triggers": [
+    "onSave",
+    "preCommit"
+  ]
+}

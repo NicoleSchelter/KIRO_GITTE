@@ -1,0 +1,20 @@
+{
+  "description": "Forbid engine/session creation at import time; only allow via factories inside functions/methods.",
+  "enabled": true,
+  "include": [
+    "src/**"
+  ],
+  "name": "DB Session Import Guard",
+  "runCommand": {
+    "args": [
+      "-NoProfile",
+      "-Command",
+      "python scripts/audit_import_sideeffects.py --root src"
+    ],
+    "shell": "pwsh"
+  },
+  "timeoutSeconds": 120,
+  "triggers": [
+    "preCommit"
+  ]
+}

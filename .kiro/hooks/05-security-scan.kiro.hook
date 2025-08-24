@@ -1,0 +1,20 @@
+{
+  "description": "Static security scan with Bandit (low-noise profile).",
+  "enabled": true,
+  "include": [
+    "src/**"
+  ],
+  "name": "Security Scan",
+  "runCommand": {
+    "args": [
+      "-NoProfile",
+      "-Command",
+      "$ErrorActionPreference='Stop'; if (-not (Get-Command bandit -ErrorAction SilentlyContinue)) { Write-Error 'bandit not found'; exit 2 }; bandit -q -r src -ll"
+    ],
+    "shell": "pwsh"
+  },
+  "timeoutSeconds": 240,
+  "triggers": [
+    "preCommit"
+  ]
+}

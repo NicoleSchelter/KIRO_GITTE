@@ -1,0 +1,22 @@
+{
+  "description": "Validate consent/UI contract against canonical Enum + alias normalization.",
+  "enabled": true,
+  "include": [
+    "src/**",
+    "config/**"
+  ],
+  "name": "Config Validator",
+  "runCommand": {
+    "args": [
+      "-NoProfile",
+      "-Command",
+      "python scripts/audit_consent_keys.py --src src --config config/config.py --models src/data/models.py"
+    ],
+    "shell": "pwsh"
+  },
+  "timeoutSeconds": 180,
+  "triggers": [
+    "onSave",
+    "preCommit"
+  ]
+}

@@ -51,7 +51,7 @@ class UserRole(str, Enum):
 
 
 class ConsentType(str, Enum):
-    """Consent type enumeration."""
+    """Legacy consent type enumeration - DEPRECATED: Use StudyConsentType for new code."""
 
     DATA_PROCESSING = "data_processing"
     AI_INTERACTION = "ai_interaction"

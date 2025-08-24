@@ -1,0 +1,22 @@
+{
+  "description": "Umbrella gate: run key audits (layer, forwardref, import guard).",
+  "enabled": true,
+  "include": [
+    "src/**",
+    "tests/**",
+    "config/**"
+  ],
+  "name": "Pre-Commit Quality Gate",
+  "runCommand": {
+    "args": [
+      "-NoProfile",
+      "-Command",
+      "python scripts/audit_layer_boundaries.py --root src; python scripts/audit_factories_forwardrefs.py --root src; python scripts/audit_import_sideeffects.py --root src"
+    ],
+    "shell": "pwsh"
+  },
+  "timeoutSeconds": 300,
+  "triggers": [
+    "preCommit"
+  ]
+}

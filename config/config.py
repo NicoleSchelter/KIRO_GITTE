@@ -649,6 +649,17 @@ except ImportError as e:
         return bool(get_flag(name))
 
 # ---------------------------------------------------------------------------
+# Consent Configuration (centralized)
+# ---------------------------------------------------------------------------
+CONSENT_TYPES_UI = [
+    ("data_protection", "Data protection (GDPR)"),
+    ("ai_interaction", "AI interaction"),
+    ("study_participation", "Study participation"),
+]
+
+DEBUG_UI_CONSENT_KEYS = True
+
+# ---------------------------------------------------------------------------
 # Retry defaults (global) + image-pipeline tuning
 # These are imported by utils/services (e.g., ux_error_handler / image isolation)
 # ---------------------------------------------------------------------------

@@ -1496,21 +1496,55 @@ class StudyConsentRepository(BaseRepository):
         version: str,
         metadata: dict[str, Any] | None = None,
     ) -> StudyConsentRecord | None:
-        """Create a new study consent record."""
+        """Create a new study consent record with FK validation."""
         try:
-            from .models import StudyConsentRecord
+            from .models import StudyConsentRecord, StudyConsentType, Pseudonym
+            from sqlalchemy.exc import IntegrityError
+            
+            # Validate consent type strictly
+            if isinstance(consent_type, str):
+                try:
+                    consent_type = StudyConsentType(consent_type)
+                except ValueError:
+                    valid_types = [e.value for e in StudyConsentType]
+                    logger.error(f"Invalid study consent type '{consent_type}'. Valid: {valid_types}")
+                    raise ValueError(f"Invalid study consent type '{consent_type}'. Valid: {valid_types}")
+            
+            if not isinstance(consent_type, StudyConsentType):
+                valid_types = [e.value for e in StudyConsentType]
+                logger.error(f"Invalid study consent type '{consent_type}'. Valid: {valid_types}")
+                raise ValueError(f"Invalid study consent type '{consent_type}'. Valid: {valid_types}")
+            
+            # CRITICAL: Check pseudonym exists before creating consent record
+            pseudonym_exists = self.session.query(
+                self.session.query(Pseudonym).filter(
+                    Pseudonym.pseudonym_id == pseudonym_id
+                ).exists()
+            ).scalar()
+            
+            if not pseudonym_exists:
+                from src.exceptions import MissingPseudonymError
+                logger.error(f"Pseudonym {pseudonym_id} does not exist")
+                raise MissingPseudonymError(f"Pseudonym {pseudonym_id} does not exist")
             
             consent = StudyConsentRecord(
                 pseudonym_id=pseudonym_id,
-                consent_type=consent_type.value if hasattr(consent_type, "value") else consent_type,
+                consent_type=consent_type.value,
                 granted=granted,
                 version=version,
             )
             self.session.add(consent)
             self.session.flush()
             return consent
+            
+        except IntegrityError as e:
+            logger.error(f"FK violation creating study consent record: {e}")
+            self.session.rollback()
+            from src.exceptions import MissingPseudonymError
+            raise MissingPseudonymError(f"Pseudonym {pseudonym_id} does not exist or FK constraint failed")
         except Exception as e:
             logger.error(f"Error creating study consent record: {e}")
+            self.session.rollback()
             return None
 
     def get_by_pseudonym_and_type(
@@ -1518,15 +1552,23 @@ class StudyConsentRepository(BaseRepository):
     ) -> StudyConsentRecord | None:
         """Get latest consent record by pseudonym and type."""
         try:
-            from .models import StudyConsentRecord
+            from .models import StudyConsentRecord, StudyConsentType
+            
+            # Validate consent type strictly
+            if isinstance(consent_type, str):
+                try:
+                    consent_type = StudyConsentType(consent_type)
+                except ValueError:
+                    valid_types = [e.value for e in StudyConsentType]
+                    logger.error(f"Invalid study consent type '{consent_type}'. Valid: {valid_types}")
+                    return None
             
             return (
                 self.session.query(StudyConsentRecord)
                 .filter(
                     and_(
                         StudyConsentRecord.pseudonym_id == pseudonym_id,
-                        StudyConsentRecord.consent_type
-                        == (consent_type.value if hasattr(consent_type, "value") else consent_type),
+                        StudyConsentRecord.consent_type == consent_type.value,
                     )
                 )
                 .order_by(desc(StudyConsentRecord.granted_at))
@@ -1556,8 +1598,17 @@ class StudyConsentRepository(BaseRepository):
     ) -> bool:
         """Withdraw consent for a pseudonym and type."""
         try:
-            from .models import StudyConsentRecord
+            from .models import StudyConsentRecord, StudyConsentType
             import time
+
+            # Validate consent type strictly
+            if isinstance(consent_type, str):
+                try:
+                    consent_type = StudyConsentType(consent_type)
+                except ValueError:
+                    valid_types = [e.value for e in StudyConsentType]
+                    logger.error(f"Invalid study consent type '{consent_type}'. Valid: {valid_types}")
+                    return False
 
             # Small delay to ensure different timestamp
             time.sleep(0.001)
@@ -1566,7 +1617,7 @@ class StudyConsentRepository(BaseRepository):
             withdrawal_time = datetime.utcnow()
             withdrawal = StudyConsentRecord(
                 pseudonym_id=pseudonym_id,
-                consent_type=consent_type.value if hasattr(consent_type, "value") else consent_type,
+                consent_type=consent_type.value,
                 granted=False,
                 version="withdrawal",
                 granted_at=withdrawal_time,

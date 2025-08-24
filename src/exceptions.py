@@ -403,6 +403,15 @@ class DuplicateRecordError(DatabaseError):
         )
 
 
+class MissingPseudonymError(DatabaseError):
+    """Pseudonym does not exist for FK constraint."""
+
+    def __init__(self, message: str = "Pseudonym does not exist", **kwargs):
+        super().__init__(message, **kwargs)
+        # Override the user message after initialization
+        self.user_message = "Invalid participant identifier. Please contact support."
+
+
 # Network Errors
 class NetworkError(GITTEError):
     """Base class for network errors."""

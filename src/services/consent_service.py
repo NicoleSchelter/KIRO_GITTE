@@ -45,7 +45,7 @@ class ConsentService:
         metadata: Dict[str, Any] | None = None,
     ) -> StudyConsentRecord:
         """
-        Record participant consent for a specific type.
+        Record participant consent for a specific type with proper transaction handling.
 
         Args:
             pseudonym_id: Pseudonym identifier for the participant
@@ -58,12 +58,17 @@ class ConsentService:
 
         Raises:
             ConsentError: If consent recording fails
+            MissingPseudonymError: If pseudonym does not exist
         """
         try:
             with get_session() as session:
-                self._session = session
-                consent_logic = self._get_consent_logic()
-                return consent_logic.record_consent(pseudonym_id, consent_type, granted, metadata)
+                # Begin explicit transaction
+                with session.begin():
+                    self._session = session
+                    consent_logic = self._get_consent_logic()
+                    result = consent_logic.record_consent(pseudonym_id, consent_type, granted, metadata)
+                    # Transaction commits automatically on successful exit
+                    return result
         except Exception as e:
             logger.error(f"Service error recording consent: {e}")
             raise
@@ -199,7 +204,7 @@ class ConsentService:
         consents: Dict[str, bool]
     ) -> Dict[str, Any]:
         """
-        Process multi-step consent collection for study participation.
+        Process multi-step consent collection for study participation with proper transaction handling.
 
         Args:
             pseudonym_id: Pseudonym identifier for the participant
@@ -210,12 +215,17 @@ class ConsentService:
 
         Raises:
             ConsentError: If consent processing fails
+            MissingPseudonymError: If pseudonym does not exist
         """
         try:
             with get_session() as session:
-                self._session = session
-                consent_logic = self._get_consent_logic()
-                return consent_logic.process_consent_collection(pseudonym_id, consents)
+                # Begin explicit transaction for bulk consent operations
+                with session.begin():
+                    self._session = session
+                    consent_logic = self._get_consent_logic()
+                    result = consent_logic.process_consent_collection(pseudonym_id, consents)
+                    # Transaction commits automatically on successful exit
+                    return result
         except Exception as e:
             logger.error(f"Service error processing consent collection: {e}")
             raise
@@ -293,7 +303,17 @@ class ConsentService:
             with get_session() as session:
                 self._session = session
                 consent_logic = self._get_consent_logic()
-                return consent_logic.record_bulk_consent(pseudonym_id, consents, metadata)
+                
+                # Use transaction for bulk operations
+                session.begin()
+                try:
+                    result = consent_logic.record_bulk_consent(pseudonym_id, consents, metadata)
+                    session.commit()
+                    return result
+                except Exception:
+                    session.rollback()
+                    raise
+                    
         except Exception as e:
             logger.error(f"Service error recording bulk consent: {e}")
             raise

@@ -1,0 +1,26 @@
+{
+  "description": "Runs layer boundary checks (blocking) and dependency vulnerability scan (warn-only by default).",
+  "enabled": true,
+  "include": [
+    "src/**",
+    "requirements.txt",
+    "pyproject.toml",
+    "requirements/*.txt"
+  ],
+  "name": "Layer + Dependency Audit",
+  "runCommand": {
+    "args": [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-Command",
+      "./scripts/run_layer_and_dep_audit.ps1"
+    ],
+    "shell": "pwsh"
+  },
+  "timeoutSeconds": 300,
+  "triggers": [
+    "onSave",
+    "preCommit"
+  ]
+}

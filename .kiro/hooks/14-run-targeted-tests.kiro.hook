@@ -1,0 +1,21 @@
+{
+  "description": "Run tests impacted by staged files (fallback to quick run).",
+  "enabled": true,
+  "include": [
+    "src/**",
+    "tests/**"
+  ],
+  "name": "Run Targeted Tests",
+  "runCommand": {
+    "args": [
+      "-NoProfile",
+      "-Command",
+      "$ErrorActionPreference='Stop'; if (-not (Get-Command pytest -ErrorAction SilentlyContinue)) { Write-Error 'pytest not found'; exit 2 }; $changed = git diff --name-only --cached | ? { $_ -like 'src/*' -or $_ -like 'tests/*' }; if ($changed.Count -eq 0) { exit 0 }; pytest -q"
+    ],
+    "shell": "pwsh"
+  },
+  "timeoutSeconds": 900,
+  "triggers": [
+    "preCommit"
+  ]
+}

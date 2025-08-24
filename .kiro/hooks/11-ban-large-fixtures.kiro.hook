@@ -1,0 +1,22 @@
+{
+  "description": "Fail on fixture files larger than 1MB or longer than 2000 lines under tests/fixtures/**.",
+  "enabled": true,
+  "include": [
+    "tests/**"
+  ],
+  "name": "Ban Large Fixtures",
+  "runCommand": {
+    "args": [
+      "-NoProfile",
+      "-Command",
+      "python scripts/ban_large_fixtures.py --root tests/fixtures --max-bytes 1048576 --max-lines 2000"
+    ],
+    "shell": "pwsh"
+  },
+  "timeoutSeconds": 60,
+  "triggers": [
+    "onSave",
+    "preCommit"
+  ],
+  "version": "1"
+}

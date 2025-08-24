@@ -1,0 +1,23 @@
+{
+  "description": "Run Ruff and Black in check mode on staged code.",
+  "enabled": true,
+  "include": [
+    "src/**",
+    "tests/**",
+    "scripts/**"
+  ],
+  "name": "Format & Lint",
+  "runCommand": {
+    "args": [
+      "-NoProfile",
+      "-Command",
+      "$ErrorActionPreference='Stop'; if (-not (Get-Command ruff -ErrorAction SilentlyContinue)) { Write-Error 'ruff not found'; exit 2 }; if (-not (Get-Command black -ErrorAction SilentlyContinue)) { Write-Error 'black not found'; exit 2 }; ruff check --quiet src tests; black --check src tests"
+    ],
+    "shell": "pwsh"
+  },
+  "timeoutSeconds": 180,
+  "triggers": [
+    "onSave",
+    "preCommit"
+  ]
+}

@@ -61,3 +61,24 @@
 - Prefer `runCommand` hooks over `askAgent` to save interaction budget
 - Hooks should be silent unless failures occur
 - Always use the project’s Python virtual environment
+
+## 9. Consent & Enum Discipline (Must-Fail)
+- Canonical consent types live only in `src/data/models.py` (`StudyConsentType`).
+- UI renders keys from `config/config.py::CONSENT_TYPES_UI` (no hardcoded literals).
+- Logic normalizes input strings to `StudyConsentType`; unknowns → typed error (list valid values).
+- Repositories accept only `StudyConsentType` (or `.value`), never free-form strings.
+
+## 10. Factory & Forward-Ref Hygiene
+- Exactly one factory per service (`get_*_service|get_*_manager`).
+- If a return annotation references a later class, the file must include:
+  `from __future__ import annotations` at the top.
+- Prefer defining factories **after** classes.
+
+## 11. DB Import-Time Safety
+- No `create_engine()` or `Session()` at import-time anywhere in `src`.
+- Open sessions only via `get_session()`/factory **inside** functions/methods.
+
+## 12. Consent Write Preconditions
+- Any write to `study_consent_records` must prove:
+  1) `pseudonym_id` exists and 2) belongs to the current user/context.
+- Missing guard is a must-fail in pre-commit (`11-consent-fk-preconditions-audit.kiro.hook`).

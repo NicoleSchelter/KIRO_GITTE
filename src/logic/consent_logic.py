@@ -3,6 +3,8 @@ Consent management logic for study participation in GITTE system.
 Handles consent recording, withdrawal, checking, and GDPR compliance for pseudonymized study data.
 """
 
+from __future__ import annotations
+
 import logging
 from typing import Any, Dict, List
 from uuid import UUID
@@ -10,16 +12,20 @@ from datetime import datetime
 
 from src.data.models import StudyConsentType, StudyConsentRecord
 from src.data.repositories import StudyConsentRepository
-from src.exceptions import ConsentError, ConsentRequiredError, ConsentWithdrawalError
-from src.utils.study_error_handler import (
-    ErrorContext,
-    StudyErrorCategory,
-    StudyErrorHandler,
-    StudyRetryConfig,
-    with_study_error_handling
-)
+from src.exceptions import ConsentError, ConsentRequiredError, ConsentWithdrawalError, MissingPseudonymError
 
 logger = logging.getLogger(__name__)
+
+
+class InvalidConsentTypeError(ConsentError):
+    """Raised when an invalid consent type is provided."""
+    
+    def __init__(self, invalid_type: str, valid_types: List[str]):
+        valid_list = ", ".join(valid_types)
+        message = f"Invalid consent type '{invalid_type}'. Valid types: {valid_list}"
+        super().__init__(message)
+        self.invalid_type = invalid_type
+        self.valid_types = valid_types
 
 
 class ConsentLogic:
@@ -33,13 +39,44 @@ class ConsentLogic:
     def __init__(self, consent_repository: StudyConsentRepository):
         self.consent_repository = consent_repository
         self.current_consent_version = "1.0"  # Should be configurable
-        self.error_handler = StudyErrorHandler()
-        self.retry_config = StudyRetryConfig(
-            max_retries=3,
-            initial_delay=0.5,
-            max_delay=5.0,
-            retryable_exceptions=(ConnectionError, TimeoutError)
-        )
+        
+        # Central alias mapping for consent key normalization
+        self._consent_aliases = {
+            # UI may use these keys, but we normalize to canonical enum values
+            "data_processing": StudyConsentType.DATA_PROTECTION,
+            "data_protection": StudyConsentType.DATA_PROTECTION,
+            "ai_interaction": StudyConsentType.AI_INTERACTION,
+            "study_participation": StudyConsentType.STUDY_PARTICIPATION,
+        }
+
+    def _normalize_consent_key(self, consent_key: str) -> StudyConsentType:
+        """
+        Normalize consent key string to canonical StudyConsentType enum.
+        
+        Args:
+            consent_key: String key from UI or external source
+            
+        Returns:
+            StudyConsentType: Canonical enum value
+            
+        Raises:
+            InvalidConsentTypeError: If key cannot be normalized
+        """
+        # Try direct enum lookup first
+        try:
+            return StudyConsentType(consent_key)
+        except ValueError:
+            pass
+            
+        # Try alias mapping
+        if consent_key in self._consent_aliases:
+            canonical_type = self._consent_aliases[consent_key]
+            logger.debug(f"Normalized consent key '{consent_key}' to '{canonical_type.value}'")
+            return canonical_type
+            
+        # Invalid key
+        valid_keys = list(self._consent_aliases.keys()) + [e.value for e in StudyConsentType]
+        raise InvalidConsentTypeError(consent_key, valid_keys)
 
     def record_consent(
         self,
@@ -242,56 +279,58 @@ class ConsentLogic:
         Raises:
             ConsentError: If consent processing fails
         """
-        context = ErrorContext(
-            pseudonym_id=pseudonym_id,
-            operation="process_consent_collection",
-            component="consent_logic",
-            metadata={"consent_count": len(consents)}
-        )
-        
-        with self.error_handler.error_boundary(StudyErrorCategory.CONSENT_COLLECTION, context, self.retry_config):
-            try:
-                consent_records = []
-                failed_consents = []
+        try:
+            consent_records = []
+            failed_consents = []
+            normalization_log = []
 
-                for consent_type_str, granted in consents.items():
+            for consent_type_str, granted in consents.items():
+                try:
+                    # Normalize consent key to canonical enum
+                    consent_type = self._normalize_consent_key(consent_type_str)
+                    normalization_log.append(f"{consent_type_str} -> {consent_type.value}")
+                    
+                    # Record consent with individual error handling
+                    record = self._record_consent_with_retry(pseudonym_id, consent_type, granted)
+                    consent_records.append(record)
+                    
+                except InvalidConsentTypeError as e:
+                    logger.error(f"Invalid consent type: {consent_type_str} - {e}")
+                    failed_consents.append(consent_type_str)
+                except Exception as e:
+                    logger.error(f"Failed to record consent {consent_type_str}: {e}")
+                    failed_consents.append(consent_type_str)
+
+            # Log normalization for debugging
+            logger.debug(f"Consent key normalization: {normalization_log}")
+
+            # Check if all required consents are granted using normalized types
+            granted_consent_types = []
+            for consent_type_str, granted in consents.items():
+                if granted:
                     try:
-                        # Convert string to enum
-                        consent_type = StudyConsentType(consent_type_str)
-                        
-                        # Record consent with individual error handling
-                        record = self._record_consent_with_retry(pseudonym_id, consent_type, granted)
-                        consent_records.append(record)
-                        
-                    except ValueError:
-                        logger.error(f"Invalid consent type: {consent_type_str}")
-                        failed_consents.append(consent_type_str)
-                    except Exception as e:
-                        logger.error(f"Failed to record consent {consent_type_str}: {e}")
-                        failed_consents.append(consent_type_str)
-
-                # Check if all required consents are granted
-                granted_consent_types = [
-                    StudyConsentType(ct) for ct, granted in consents.items() 
-                    if granted and ct in [c.value for c in StudyConsentType]
-                ]
+                        normalized_type = self._normalize_consent_key(consent_type_str)
+                        granted_consent_types.append(normalized_type)
+                    except InvalidConsentTypeError:
+                        continue  # Skip invalid types
                 
-                validation_result = self.validate_consent_completeness(granted_consent_types)
+            validation_result = self.validate_consent_completeness(granted_consent_types)
 
-                result = {
-                    "success": len(failed_consents) == 0,
-                    "consent_records": consent_records,
-                    "failed_consents": failed_consents,
-                    "validation": validation_result,
-                    "can_proceed": validation_result["is_complete"] and len(failed_consents) == 0
-                }
-                
-                logger.info(f"Consent collection processed for pseudonym {pseudonym_id}: {len(consent_records)} successful, {len(failed_consents)} failed")
-                return result
+            result = {
+                "success": len(failed_consents) == 0,
+                "consent_records": consent_records,
+                "failed_consents": failed_consents,
+                "validation": validation_result,
+                "can_proceed": validation_result["is_complete"] and len(failed_consents) == 0,
+                "normalization_log": normalization_log
+            }
+            
+            logger.info(f"Consent collection processed for pseudonym {pseudonym_id}: {len(consent_records)} successful, {len(failed_consents)} failed")
+            return result
 
-            except Exception as e:
-                logger.error(f"Failed to process consent collection for pseudonym {pseudonym_id}: {e}")
-                raise ConsentError(f"Consent collection processing failed: {str(e)}")
+        except Exception as e:
+            logger.error(f"Failed to process consent collection for pseudonym {pseudonym_id}: {e}")
+            raise ConsentError(f"Consent collection processing failed: {str(e)}")
     
     def _record_consent_with_retry(
         self, 
@@ -399,6 +438,10 @@ class ConsentLogic:
             consent_records = []
 
             for consent_type, granted in consents.items():
+                # Ensure we have a proper enum instance
+                if isinstance(consent_type, str):
+                    consent_type = self._normalize_consent_key(consent_type)
+                
                 record = self.record_consent(pseudonym_id, consent_type, granted, metadata)
                 consent_records.append(record)
 
