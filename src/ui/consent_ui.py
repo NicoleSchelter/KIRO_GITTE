@@ -343,7 +343,7 @@ class ConsentUI:
                 with st.container():
                     st.markdown(f"**{i+1}. {consent_label}**")
                     
-                    # Simple checkbox without complex formatting
+                    # Simple checkbox without complex formatting - prevent early form abort
                     granted = st.checkbox(
                         f"I consent to {consent_label.lower()}",
                         value=current_value,

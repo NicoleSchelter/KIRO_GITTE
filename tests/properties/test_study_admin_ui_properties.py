@@ -18,11 +18,9 @@ class TestStudyAdminUIProperties:
 
     def setup_method(self):
         """Set up test fixtures."""
-        self.mock_db_manager = Mock()
         self.mock_admin_logic = Mock()
         
-        with patch('src.ui.study_admin_ui.DatabaseManager', return_value=self.mock_db_manager), \
-             patch('src.ui.study_admin_ui.AdminLogic', return_value=self.mock_admin_logic):
+        with patch('src.logic.admin_logic.AdminLogic', return_value=self.mock_admin_logic):
             self.admin_ui = StudyAdminUI()
 
     @given(

@@ -167,12 +167,12 @@ def optimize_system():
     try:
         # Always reuse the central database engine from the data layer
         try:
-            from data.database import setup_database, db_manager  # 'src' is already added to sys.path above
+            from data.database_factory import setup_database, _db_factory  # 'src' is already added to sys.path above
         except Exception:
-            from src.data.database import setup_database, db_manager  # fallback if path differs
+            from src.data.database_factory import setup_database, _db_factory  # fallback if path differs
 
         setup_database()  # ensures env loading, engine with pool_pre_ping, session factory, etc.
-        engine = db_manager.engine
+        engine = _db_factory.engine
 
         initialize_db_optimizer(engine)
         db_optimizer = DatabaseOptimizationService(engine)

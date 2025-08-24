@@ -158,13 +158,13 @@ class DatabaseConnectionPool(LazyResource):
         try:
             # Be robust to different import styles during scripts/tests
             try:
-                from src.data.database import setup_database, db_manager
+                from src.data.database_factory import setup_database, _db_factory
             except Exception:
-                from data.database import setup_database, db_manager  # when 'src' is on sys.path
+                from data.database_factory import setup_database, _db_factory  # when 'src' is on sys.path
 
             # Ensure central DB is initialized (loads .env, sets pool_pre_ping, etc.)
             setup_database()
-            self._engine = db_manager.engine
+            self._engine = _db_factory.engine
             logger.info("Using central database engine (no private pool created)")
             return self._engine
 

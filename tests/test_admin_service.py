@@ -24,29 +24,28 @@ class TestAdminService:
     def test_create_all_tables_success(self):
         """Test successful table creation."""
         # Setup
-        with patch('src.data.models.Base') as mock_base, \
-             patch('src.data.database.db_manager') as mock_db_manager:
+        with patch('src.data.database_factory._db_factory') as mock_db_factory, \
+             patch('src.data.database_factory.create_all_tables') as mock_create_tables:
             
-            mock_db_manager._initialized = False
-            mock_db_manager.engine = Mock()
-            mock_base.metadata.create_all = Mock()
+            mock_db_factory.initialize = Mock()
+            mock_create_tables.return_value = None
 
             # Execute
             result = self.admin_service.create_all_tables()
 
             # Verify
             assert result is True
-            mock_db_manager.initialize.assert_called_once()
-            mock_base.metadata.create_all.assert_called_once_with(bind=mock_db_manager.engine)
+            mock_db_factory.initialize.assert_called_once()
+            mock_create_tables.assert_called_once()
 
     def test_create_all_tables_failure(self):
         """Test table creation failure."""
         # Setup
-        with patch('src.data.models.Base') as mock_base, \
-             patch('src.data.database.db_manager') as mock_db_manager:
+        with patch('src.data.database_factory._db_factory') as mock_db_factory, \
+             patch('src.data.database_factory.create_all_tables') as mock_create_tables:
             
-            mock_db_manager._initialized = True
-            mock_base.metadata.create_all.side_effect = Exception("Creation failed")
+            mock_db_factory.initialize = Mock()
+            mock_create_tables.side_effect = Exception("Creation failed")
 
             # Execute
             result = self.admin_service.create_all_tables()
@@ -58,10 +57,10 @@ class TestAdminService:
         """Test successful table dropping."""
         # Setup
         with patch('src.data.models.Base') as mock_base, \
-             patch('src.data.database.db_manager') as mock_db_manager:
+             patch('src.data.database_factory._db_factory') as mock_db_factory:
             
-            mock_db_manager._initialized = True
-            mock_db_manager.engine = Mock()
+            mock_db_factory.initialize = Mock()
+            mock_db_factory.engine = Mock()
             mock_base.metadata.drop_all = Mock()
 
             # Execute
@@ -69,15 +68,15 @@ class TestAdminService:
 
             # Verify
             assert result is True
-            mock_base.metadata.drop_all.assert_called_once_with(bind=mock_db_manager.engine)
+            mock_base.metadata.drop_all.assert_called_once_with(bind=mock_db_factory.engine)
 
     def test_drop_all_tables_failure(self):
         """Test table dropping failure."""
         # Setup
         with patch('src.data.models.Base') as mock_base, \
-             patch('src.data.database.db_manager') as mock_db_manager:
+             patch('src.data.database_factory._db_factory') as mock_db_factory:
             
-            mock_db_manager._initialized = True
+            mock_db_factory.initialize = Mock()
             mock_base.metadata.drop_all.side_effect = Exception("Drop failed")
 
             # Execute

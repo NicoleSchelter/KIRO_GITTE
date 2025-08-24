@@ -25,45 +25,7 @@ from .database_factory import (
 
 logger = logging.getLogger(__name__)
 
-# Backward compatibility - delegate to factory
-class DatabaseManager:
-    """DEPRECATED: Use database_factory instead."""
-    
-    def __init__(self):
-        logger.warning("DatabaseManager is deprecated, use database_factory")
-        
-    def initialize(self) -> None:
-        return factory_initialize_database()
-    
-    @property
-    def engine(self):
-        return _db_factory.engine
-    
-    @property
-    def session_factory(self):
-        return _db_factory.session_factory
-    
-    def create_all_tables(self) -> None:
-        return factory_create_all_tables()
-    
-    def drop_all_tables(self) -> None:
-        # Not implemented in factory for safety
-        raise NotImplementedError("Use database_factory for table operations")
-    
-    def get_session(self) -> Generator[Session, None, None]:
-        return factory_get_session()
-    
-    def get_session_sync(self) -> Session:
-        return factory_get_session_sync()
-    
-    def health_check(self) -> bool:
-        return factory_health_check()
-    
-    def close(self) -> None:
-        return factory_close_database()
-
-# Global database manager instance (deprecated)
-db_manager = DatabaseManager()
+# Legacy compatibility layer - use database_factory directly for new code
 
 # Public API functions (backward compatibility)
 def get_session() -> Generator[Session, None, None]:

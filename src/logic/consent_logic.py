@@ -34,6 +34,9 @@ class ConsentLogic:
     
     This class handles consent operations using pseudonym_id instead of user_id
     to maintain privacy separation for research data.
+    
+    Implements Flow B: Stage consents in memory until pseudonym is confirmed,
+    then persist in a single transaction.
     """
 
     def __init__(self, consent_repository: StudyConsentRepository):
@@ -261,6 +264,157 @@ class ConsentLogic:
             "provided_consents": [c.value for c in consents]
         }
 
+    def stage_consents(
+        self, 
+        user_id: UUID, 
+        consents: Dict[str, bool]
+    ) -> Dict[str, Any]:
+        """
+        Stage consents in memory (session store) without persisting to database.
+        This is part of Flow B where consents are staged until pseudonym is confirmed.
+
+        Args:
+            user_id: User identifier for session tracking
+            consents: Dict mapping consent type strings to boolean values
+
+        Returns:
+            Dict containing staging results
+        """
+        try:
+            staged_consents = []
+            failed_consents = []
+            normalization_log = []
+
+            for consent_type_str, granted in consents.items():
+                try:
+                    # Normalize consent key to canonical enum
+                    consent_type = self._normalize_consent_key(consent_type_str)
+                    normalization_log.append(f"{consent_type_str} -> {consent_type.value}")
+                    
+                    # Stage consent (don't persist yet)
+                    staged_consent = {
+                        "consent_type": consent_type,
+                        "granted": granted,
+                        "version": self.current_consent_version,
+                        "staged_at": datetime.utcnow()
+                    }
+                    staged_consents.append(staged_consent)
+                    
+                except InvalidConsentTypeError as e:
+                    logger.error(f"Invalid consent type: {consent_type_str} - {e}")
+                    failed_consents.append(consent_type_str)
+                except Exception as e:
+                    logger.error(f"Failed to stage consent {consent_type_str}: {e}")
+                    failed_consents.append(consent_type_str)
+
+            # Log staging for debugging
+            logger.info(f"consent_logic: staging consents until pseudonym confirmed (user_id={user_id}, session={len(staged_consents)} consents)")
+            logger.debug(f"Consent key normalization: {normalization_log}")
+
+            # Check if all required consents are granted using normalized types
+            granted_consent_types = []
+            for staged_consent in staged_consents:
+                if staged_consent["granted"]:
+                    granted_consent_types.append(staged_consent["consent_type"])
+                
+            validation_result = self.validate_consent_completeness(granted_consent_types)
+
+            result = {
+                "success": len(failed_consents) == 0,
+                "staged_consents": staged_consents,
+                "failed_consents": failed_consents,
+                "validation": validation_result,
+                "can_proceed": validation_result["is_complete"] and len(failed_consents) == 0,
+                "normalization_log": normalization_log
+            }
+            
+            return result
+
+        except Exception as e:
+            logger.error(f"Failed to stage consent collection for user {user_id}: {e}")
+            raise ConsentError(f"Consent staging failed: {str(e)}")
+
+    def persist_staged_consents(
+        self,
+        pseudonym_id: UUID,
+        staged_consents: List[Dict[str, Any]],
+        max_retries: int = 3
+    ) -> Dict[str, Any]:
+        """
+        Persist staged consents to database in a single transaction.
+        This completes Flow B after pseudonym is confirmed.
+
+        Args:
+            pseudonym_id: Pseudonym identifier for the participant
+            staged_consents: List of staged consent dictionaries
+            max_retries: Maximum retry attempts for database failures
+
+        Returns:
+            Dict containing persistence results
+        """
+        for attempt in range(max_retries):
+            try:
+                from src.data.database_factory import database_transaction
+                
+                consent_records = []
+                
+                # Use fresh session for each attempt
+                with database_transaction() as session:
+                    # Verify pseudonym exists before persisting consents
+                    from src.data.repositories import PseudonymRepository
+                    pseudonym_repo = PseudonymRepository(session)
+                    
+                    if not pseudonym_repo.get_by_id(pseudonym_id):
+                        raise MissingPseudonymError(f"Pseudonym {pseudonym_id} does not exist")
+                    
+                    # Persist all staged consents in single transaction
+                    consent_repo = StudyConsentRepository(session)
+                    
+                    for staged_consent in staged_consents:
+                        record = consent_repo.create_consent(
+                            pseudonym_id=pseudonym_id,
+                            consent_type=staged_consent["consent_type"],
+                            granted=staged_consent["granted"],
+                            version=staged_consent["version"],
+                            metadata=staged_consent.get("metadata", {})
+                        )
+                        consent_records.append(record)
+                    
+                    # Transaction commits automatically on successful exit
+                    
+                logger.info(f"consent_logic: persisted {len(consent_records)} consents in single transaction")
+                
+                return {
+                    "success": True,
+                    "consent_records": consent_records,
+                    "persisted_count": len(consent_records),
+                    "attempt": attempt + 1
+                }
+                
+            except Exception as e:
+                logger.error(f"consent_logic: rolling back and opening fresh session for retry (attempt {attempt + 1}): {e}")
+                
+                if attempt == max_retries - 1:
+                    logger.error(f"Failed to persist staged consents after {max_retries} attempts: {e}")
+                    return {
+                        "success": False,
+                        "error": str(e),
+                        "consent_records": [],
+                        "persisted_count": 0,
+                        "attempt": attempt + 1
+                    }
+                # Continue to next attempt with fresh session
+                continue
+        
+        # Should not reach here
+        return {
+            "success": False,
+            "error": "Unexpected retry loop exit",
+            "consent_records": [],
+            "persisted_count": 0,
+            "attempt": max_retries
+        }
+
     def process_consent_collection(
         self, 
         pseudonym_id: UUID, 
@@ -268,6 +422,7 @@ class ConsentLogic:
     ) -> Dict[str, Any]:
         """
         Process multi-step consent collection for study participation with error handling.
+        This is the legacy direct-persist method, kept for backward compatibility.
 
         Args:
             pseudonym_id: Pseudonym identifier for the participant

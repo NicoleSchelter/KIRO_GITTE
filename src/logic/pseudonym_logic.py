@@ -128,9 +128,157 @@ class PseudonymLogic:
             logger.error(f"Error generating pseudonym hash: {e}")
             raise PseudonymError(f"Failed to generate pseudonym hash: {e}")
 
+    def create_pseudonym_with_consents(
+        self, 
+        user_id: UUID, 
+        pseudonym_text: str, 
+        staged_consents: list[dict[str, Any]], 
+        created_by: str = "system",
+        max_retries: int = 3
+    ) -> dict[str, Any]:
+        """
+        Create pseudonym and persist staged consents in a single transaction (Flow B).
+        
+        Args:
+            user_id: The user ID
+            pseudonym_text: The pseudonym text
+            staged_consents: List of staged consent dictionaries
+            created_by: Who created the pseudonym (for audit)
+            max_retries: Maximum retry attempts
+            
+        Returns:
+            Dict containing creation results
+            
+        Raises:
+            InvalidPseudonymFormatError: If pseudonym format is invalid
+            PseudonymNotUniqueError: If pseudonym is not unique
+            PseudonymError: If creation fails
+        """
+        for attempt in range(max_retries):
+            try:
+                from src.data.database_factory import database_transaction
+                
+                # Use fresh session for each attempt
+                with database_transaction() as session:
+                    # Create repositories with the session
+                    from src.data.repositories import PseudonymRepository, StudyConsentRepository
+                    pseudonym_repo = PseudonymRepository(session)
+                    consent_repo = StudyConsentRepository(session)
+                    
+                    # Check if user already has an active pseudonym
+                    existing_pseudonym = pseudonym_repo.get_by_user_id(user_id)
+                    if existing_pseudonym:
+                        # If pseudonym exists and is active for this user, skip creation
+                        if existing_pseudonym.is_active:
+                            logger.info(f"pseudonym_logic: user {user_id} already has active pseudonym, linking consents")
+                            
+                            # Persist staged consents to existing pseudonym
+                            consent_records = []
+                            for staged_consent in staged_consents:
+                                record = consent_repo.create_consent(
+                                    pseudonym_id=existing_pseudonym.pseudonym_id,
+                                    consent_type=staged_consent["consent_type"],
+                                    granted=staged_consent["granted"],
+                                    version=staged_consent["version"],
+                                    metadata=staged_consent.get("metadata", {})
+                                )
+                                consent_records.append(record)
+                            
+                            return {
+                                "success": True,
+                                "pseudonym_created": False,
+                                "pseudonym": existing_pseudonym,
+                                "consent_records": consent_records,
+                                "attempt": attempt + 1
+                            }
+                        else:
+                            raise PseudonymError("User has inactive pseudonym")
+
+                    # Validate pseudonym format and uniqueness
+                    validation = self.validate_pseudonym_format(pseudonym_text)
+                    
+                    if not validation.is_valid:
+                        raise InvalidPseudonymFormatError(validation.error_message or "Invalid format")
+                    
+                    # Check if pseudonym text exists but is mapped to another user
+                    existing_by_text = pseudonym_repo.get_by_text(pseudonym_text)
+                    if existing_by_text:
+                        # Check if it's mapped to a different user
+                        existing_mapping = pseudonym_repo.get_mapping_by_pseudonym_id(existing_by_text.pseudonym_id)
+                        if existing_mapping and existing_mapping.user_id != user_id:
+                            raise PseudonymNotUniqueError("Pseudonym text exists but is mapped to another user")
+
+                    # Generate hash with retry logic
+                    pseudonym_hash = self._generate_hash_with_retry(pseudonym_text, user_id)
+
+                    # Create pseudonym with mapping in single transaction
+                    pseudonym_data = PseudonymCreate(pseudonym_text=pseudonym_text)
+                    
+                    pseudonym, mapping = pseudonym_repo.create_pseudonym_with_mapping(
+                        pseudonym_data, pseudonym_hash, user_id, created_by
+                    )
+                    
+                    if not pseudonym or not mapping:
+                        raise PseudonymError("Failed to create pseudonym in database")
+
+                    logger.info(f"pseudonym_logic: created/mapped pseudonym {pseudonym.pseudonym_id} for user {user_id}")
+
+                    # Persist all staged consents with the new pseudonym_id
+                    consent_records = []
+                    for staged_consent in staged_consents:
+                        record = consent_repo.create_consent(
+                            pseudonym_id=pseudonym.pseudonym_id,
+                            consent_type=staged_consent["consent_type"],
+                            granted=staged_consent["granted"],
+                            version=staged_consent["version"],
+                            metadata=staged_consent.get("metadata", {})
+                        )
+                        consent_records.append(record)
+                    
+                    # Transaction commits automatically on successful exit
+                    logger.info(f"pseudonym_logic: persisted {len(consent_records)} consents for pseudonym {pseudonym.pseudonym_id}")
+                    
+                    return {
+                        "success": True,
+                        "pseudonym_created": True,
+                        "pseudonym": pseudonym,
+                        "consent_records": consent_records,
+                        "attempt": attempt + 1
+                    }
+                    
+            except (InvalidPseudonymFormatError, PseudonymNotUniqueError):
+                # Don't retry validation errors
+                raise
+            except Exception as e:
+                logger.error(f"pseudonym_logic: rolling back and opening fresh session for retry (attempt {attempt + 1}): {e}")
+                
+                if attempt == max_retries - 1:
+                    logger.error(f"Failed to create pseudonym with consents after {max_retries} attempts: {e}")
+                    return {
+                        "success": False,
+                        "error": str(e),
+                        "pseudonym_created": False,
+                        "pseudonym": None,
+                        "consent_records": [],
+                        "attempt": attempt + 1
+                    }
+                # Continue to next attempt with fresh session
+                continue
+        
+        # Should not reach here
+        return {
+            "success": False,
+            "error": "Unexpected retry loop exit",
+            "pseudonym_created": False,
+            "pseudonym": None,
+            "consent_records": [],
+            "attempt": max_retries
+        }
+
     def create_pseudonym(self, user_id: UUID, pseudonym_text: str, created_by: str = "system") -> PseudonymResponse:
         """
         Create a new pseudonym for a user with comprehensive error handling.
+        This is the legacy method, kept for backward compatibility.
         
         Args:
             user_id: The user ID

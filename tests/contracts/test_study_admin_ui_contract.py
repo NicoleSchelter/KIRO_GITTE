@@ -29,27 +29,21 @@ class TestStudyAdminUIContracts:
 
     def setup_method(self):
         """Set up test fixtures."""
-        self.mock_db_manager = Mock()
         self.mock_admin_logic = Mock(spec=AdminLogic)
         
-        with patch('src.ui.study_admin_ui.DatabaseManager', return_value=self.mock_db_manager), \
-             patch('src.ui.study_admin_ui.AdminLogic', return_value=self.mock_admin_logic):
+        with patch('src.logic.admin_logic.AdminLogic', return_value=self.mock_admin_logic):
             self.admin_ui = StudyAdminUI()
 
     def test_admin_logic_initialization_contract(self):
-        """Test that AdminLogic is properly initialized with DatabaseManager."""
-        # Verify the contract: AdminLogic should be initialized with DatabaseManager
-        with patch('src.ui.study_admin_ui.DatabaseManager') as mock_db_manager_class, \
-             patch('src.ui.study_admin_ui.AdminLogic') as mock_admin_logic_class:
-            
-            mock_db_manager_instance = mock_db_manager_class.return_value
+        """Test that AdminLogic is properly initialized."""
+        # Verify the contract: AdminLogic should be initialized without parameters
+        with patch('src.logic.admin_logic.AdminLogic') as mock_admin_logic_class:
             
             # Create new instance to test initialization
             admin_ui = StudyAdminUI()
             
             # Verify contract compliance
-            mock_db_manager_class.assert_called_once()
-            mock_admin_logic_class.assert_called_once_with(mock_db_manager_instance)
+            mock_admin_logic_class.assert_called_once()
 
     def test_database_statistics_contract(self):
         """Test database statistics method contract compliance."""

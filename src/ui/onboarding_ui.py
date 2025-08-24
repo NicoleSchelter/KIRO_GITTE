@@ -75,11 +75,20 @@ class OnboardingUI:
                             if granted:
                                 st.write(f"• {consent_key.replace('_', ' ').title()}")
                 
-                pseudonym_created, pseudonym_id = pseudonym_ui.render_pseudonym_creation_screen(user_id)
+                pseudonym_created, pseudonym_key = pseudonym_ui.render_pseudonym_creation_screen(user_id)
                 
-                if pseudonym_created and pseudonym_id:
-                    st.session_state.created_pseudonym_id = pseudonym_id
-                    st.session_state.onboarding_step = "finalize"
+                if pseudonym_created and pseudonym_key:
+                    # Store both the pseudonym text (key) and mark as created
+                    st.session_state.created_pseudonym_key = pseudonym_key
+                    st.session_state.created_pseudonym_id = pseudonym_key  # For backward compatibility
+                    
+                    # In Flow B, consents are already persisted, so skip finalization
+                    if st.session_state.get("buffered_consents"):
+                        # Flow B was used - consents already persisted
+                        st.session_state.onboarding_step = "complete"
+                    else:
+                        # Legacy flow - need finalization
+                        st.session_state.onboarding_step = "finalize"
                     st.rerun()
 
             # Step 3: Finalization
@@ -157,6 +166,7 @@ class OnboardingUI:
     def _finalize_onboarding(self, user_id: UUID) -> bool:
         """
         Finalize onboarding by persisting buffered consents with the created pseudonym.
+        Note: In Flow B, this step may be skipped as consents are already persisted.
         
         Args:
             user_id: User identifier
@@ -165,42 +175,66 @@ class OnboardingUI:
             bool: True if finalization successful
         """
         try:
-            pseudonym_id = st.session_state.get("created_pseudonym_id")
+            pseudonym_key = st.session_state.get("created_pseudonym_key")
             buffered_consents = st.session_state.get("buffered_consents", {})
             
-            if not pseudonym_id:
+            if not pseudonym_key:
                 st.error("No pseudonym found. Please go back and create a pseudonym.")
                 return False
             
+            # Check if this is Flow B (consents already persisted)
             if not buffered_consents:
-                st.error("No consents found. Please go back and grant required consents.")
-                return False
+                # Flow B was used - consents already persisted during pseudonym creation
+                st.success("✅ Registration already completed during pseudonym creation!")
+                
+                # Show summary
+                st.subheader("Registration Summary")
+                st.write(f"**Participation Key:** {pseudonym_key}")
+                st.write(f"**Status:** Active")
+                st.write("**Consents:** Already granted and saved")
+                
+                return True
+            
+            # Legacy flow - need to persist consents
+            # This should rarely happen with the new Flow B
+            st.warning("Using legacy consent persistence flow...")
             
             # Show finalization progress
             with st.spinner("Finalizing your registration..."):
-                # Convert pseudonym_id string back to UUID
-                from uuid import UUID as UUIDClass
-                pseudonym_uuid = UUIDClass(pseudonym_id)
-                
-                # Process consent collection with the created pseudonym
-                result = self.consent_service.process_consent_collection(
-                    pseudonym_uuid, 
-                    buffered_consents
-                )
-                
-                if result["success"] and result["can_proceed"]:
-                    st.success("✅ Registration finalized successfully!")
-                    
-                    # Show summary
-                    st.subheader("Registration Summary")
-                    st.write(f"**Pseudonym ID:** {pseudonym_id}")
-                    st.write(f"**Consents Granted:** {len([k for k, v in buffered_consents.items() if v])}")
-                    st.write(f"**Registration Date:** {st.session_state.get('registration_date', 'Today')}")
-                    
-                    return True
-                else:
-                    failed_consents = result.get("failed_consents", [])
-                    st.error(f"Failed to save consents: {', '.join(failed_consents)}")
+                # For legacy flow, we need to find the pseudonym UUID
+                # This is a fallback and should be improved
+                try:
+                    # Try to get the pseudonym UUID from the service
+                    pseudonym_response = self.pseudonym_service.get_user_pseudonym(user_id)
+                    if pseudonym_response:
+                        pseudonym_uuid = pseudonym_response.pseudonym_id
+                        
+                        # Process consent collection with the created pseudonym
+                        result = self.consent_service.process_consent_collection(
+                            pseudonym_uuid, 
+                            buffered_consents
+                        )
+                        
+                        if result["success"] and result["can_proceed"]:
+                            st.success("✅ Registration finalized successfully!")
+                            
+                            # Show summary
+                            st.subheader("Registration Summary")
+                            st.write(f"**Participation Key:** {pseudonym_key}")
+                            st.write(f"**Consents Granted:** {len([k for k, v in buffered_consents.items() if v])}")
+                            
+                            return True
+                        else:
+                            failed_consents = result.get("failed_consents", [])
+                            st.error(f"Failed to save consents: {', '.join(failed_consents)}")
+                            return False
+                    else:
+                        st.error("Could not find created pseudonym for consent persistence.")
+                        return False
+                        
+                except Exception as e:
+                    logger.error(f"Error in legacy consent persistence: {e}")
+                    st.error("Failed to persist consents. Please try again.")
                     return False
                     
         except Exception as e:

@@ -46,14 +46,13 @@ class AdminService:
         """
         try:
             from src.data.models import Base
-            from src.data.database import db_manager
+            from src.data.database_factory import _db_factory, create_all_tables
             
-            # Ensure database manager is initialized
-            if not db_manager._initialized:
-                db_manager.initialize()
+            # Ensure database factory is initialized
+            _db_factory.initialize()
             
             # Create all tables
-            Base.metadata.create_all(bind=db_manager.engine)
+            create_all_tables()
             self.logger.info("All database tables created successfully")
             return True
             
@@ -70,14 +69,13 @@ class AdminService:
         """
         try:
             from src.data.models import Base
-            from src.data.database import db_manager
+            from src.data.database_factory import _db_factory
             
-            # Ensure database manager is initialized
-            if not db_manager._initialized:
-                db_manager.initialize()
+            # Ensure database factory is initialized
+            _db_factory.initialize()
             
             # Drop all tables
-            Base.metadata.drop_all(bind=db_manager.engine)
+            Base.metadata.drop_all(bind=_db_factory.engine)
             self.logger.warning("All database tables dropped")
             return True
             

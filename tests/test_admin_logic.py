@@ -16,19 +16,15 @@ class TestAdminLogic:
 
     def setup_method(self):
         """Set up test fixtures."""
-        self.mock_db_manager = Mock()
-        self.mock_db_manager._initialized = False
-        self.mock_db_manager.engine = Mock()
-        
-        self.admin_logic = AdminLogic(self.mock_db_manager)
+        self.admin_logic = AdminLogic()
 
     def test_initialize_database_schema_success(self):
         """Test successful database schema initialization."""
         # Setup
-        self.mock_db_manager._initialized = False
-        
         with patch('src.logic.admin_logic.Base') as mock_base, \
-             patch('src.logic.admin_logic.get_session') as mock_get_session:
+             patch('src.logic.admin_logic.get_session') as mock_get_session, \
+             patch('src.logic.admin_logic._db_factory') as mock_db_factory, \
+             patch('src.logic.admin_logic.create_all_tables') as mock_create_tables:
             
             mock_session = Mock()
             mock_get_session.return_value.__enter__.return_value = mock_session
@@ -38,7 +34,8 @@ class TestAdminLogic:
             mock_session.execute.side_effect = Exception("Table doesn't exist")
             
             mock_base.metadata.tables.keys.return_value = ['pseudonyms', 'study_consent_records']
-            mock_base.metadata.create_all = Mock()
+            mock_db_factory.initialize = Mock()
+            mock_create_tables.return_value = None
 
             # Execute
             result = self.admin_logic.initialize_database_schema()
@@ -52,17 +49,17 @@ class TestAdminLogic:
             assert len(result.errors) == 0
             assert isinstance(result.timestamp, datetime)
             
-            # Verify database manager was initialized
-            self.mock_db_manager.initialize.assert_called_once()
-            mock_base.metadata.create_all.assert_called_once_with(bind=self.mock_db_manager.engine)
+            # Verify database factory was initialized
+            mock_db_factory.initialize.assert_called_once()
+            mock_create_tables.assert_called_once()
 
     def test_initialize_database_schema_tables_exist(self):
         """Test database initialization when tables already exist."""
         # Setup
-        self.mock_db_manager._initialized = True
-        
         with patch('src.logic.admin_logic.Base') as mock_base, \
-             patch('src.logic.admin_logic.get_session') as mock_get_session:
+             patch('src.logic.admin_logic.get_session') as mock_get_session, \
+             patch('src.logic.admin_logic._db_factory') as mock_db_factory, \
+             patch('src.logic.admin_logic.create_all_tables') as mock_create_tables:
             
             mock_session = Mock()
             mock_get_session.return_value.__enter__.return_value = mock_session
@@ -72,7 +69,8 @@ class TestAdminLogic:
             mock_session.execute.return_value = Mock()
             
             mock_base.metadata.tables.keys.return_value = ['pseudonyms', 'study_consent_records']
-            mock_base.metadata.create_all = Mock()
+            mock_db_factory.initialize = Mock()
+            mock_create_tables.return_value = None
 
             # Execute
             result = self.admin_logic.initialize_database_schema()
@@ -82,30 +80,36 @@ class TestAdminLogic:
             assert len(result.tables_created) == 0  # No new tables created
             assert len(result.errors) == 0
             
-            # Database manager should not be initialized again
-            self.mock_db_manager.initialize.assert_not_called()
+            # Database factory should still be initialized
+            mock_db_factory.initialize.assert_called_once()
 
     def test_initialize_database_schema_failure(self):
         """Test database initialization failure."""
         # Setup
-        self.mock_db_manager.initialize.side_effect = Exception("Database connection failed")
-        
-        # Execute
-        result = self.admin_logic.initialize_database_schema()
+        with patch('src.logic.admin_logic._db_factory') as mock_db_factory:
+            mock_db_factory.initialize.side_effect = Exception("Database connection failed")
+            
+            # Execute
+            result = self.admin_logic.initialize_database_schema()
 
-        # Verify
-        assert result.success is False
-        assert len(result.tables_created) == 0
-        assert len(result.errors) == 1
-        assert "Database initialization failed" in result.errors[0]
+            # Verify
+            assert result.success is False
+            assert len(result.tables_created) == 0
+            assert len(result.errors) == 1
+            assert "Database initialization failed" in result.errors[0]
 
     def test_reset_all_study_data_success(self):
         """Test successful database reset."""
         # Setup
-        with patch('src.logic.admin_logic.Base') as mock_base:
+        with patch('src.logic.admin_logic.Base') as mock_base, \
+             patch('src.logic.admin_logic._db_factory') as mock_db_factory, \
+             patch('src.logic.admin_logic.create_all_tables') as mock_create_tables:
+            
             mock_base.metadata.tables.keys.return_value = ['pseudonyms', 'study_consent_records', 'chat_messages']
             mock_base.metadata.drop_all = Mock()
-            mock_base.metadata.create_all = Mock()
+            mock_db_factory.initialize = Mock()
+            mock_db_factory.engine = Mock()
+            mock_create_tables.return_value = None
 
             # Execute
             result = self.admin_logic.reset_all_study_data()
@@ -119,8 +123,8 @@ class TestAdminLogic:
             assert 'pseudonyms' in result.tables_recreated
             assert len(result.errors) == 0
             
-            mock_base.metadata.drop_all.assert_called_once_with(bind=self.mock_db_manager.engine)
-            mock_base.metadata.create_all.assert_called_once_with(bind=self.mock_db_manager.engine)
+            mock_base.metadata.drop_all.assert_called_once_with(bind=mock_db_factory.engine)
+            mock_create_tables.assert_called_once()
 
     def test_reset_all_study_data_failure(self):
         """Test database reset failure."""

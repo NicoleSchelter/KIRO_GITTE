@@ -74,7 +74,6 @@ class AdminLogic:
 
     def __init__(self):
         """Initialize admin logic."""
-        pass
         self.logger = logging.getLogger(__name__)
 
     def initialize_database_schema(self) -> InitializationResult:
@@ -89,9 +88,10 @@ class AdminLogic:
         errors = []
 
         try:
-            # Ensure database manager is initialized
-            if not self.db_manager._initialized:
-                self.db_manager.initialize()
+            from src.data.database_factory import _db_factory, create_all_tables
+            
+            # Ensure database factory is initialized
+            _db_factory.initialize()
 
             # Get all table names from metadata
             all_tables = list(Base.metadata.tables.keys())
@@ -109,7 +109,7 @@ class AdminLogic:
                         pass
 
             # Create all tables (this is idempotent - won't duplicate existing tables)
-            Base.metadata.create_all(bind=self.db_manager.engine)
+            create_all_tables()
             
             # Determine which tables were actually created
             tables_created = [table for table in all_tables if table not in existing_tables]
@@ -152,16 +152,21 @@ class AdminLogic:
         errors = []
 
         try:
+            from src.data.database_factory import _db_factory, create_all_tables
+            
+            # Ensure database factory is initialized
+            _db_factory.initialize()
+            
             # Get all table names before dropping
             all_tables = list(Base.metadata.tables.keys())
             
             # Drop all tables
-            Base.metadata.drop_all(bind=self.db_manager.engine)
+            Base.metadata.drop_all(bind=_db_factory.engine)
             tables_dropped = all_tables.copy()
             self.logger.warning(f"Dropped all tables: {tables_dropped}")
 
             # Recreate all tables
-            Base.metadata.create_all(bind=self.db_manager.engine)
+            create_all_tables()
             tables_recreated = all_tables.copy()
             self.logger.info(f"Recreated all tables: {tables_recreated}")
 

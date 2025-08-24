@@ -350,9 +350,7 @@ class TestAdminIntegration:
 
     def test_admin_logic_statistics_integration(self):
         """Test AdminLogic database statistics functionality."""
-        from src.data.database import db_manager
-        
-        admin_logic = AdminLogic(db_manager)
+        admin_logic = AdminLogic()
         
         # Create some test data
         with get_session() as session:

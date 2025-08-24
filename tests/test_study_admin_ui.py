@@ -27,12 +27,8 @@ class TestStudyAdminUI:
 
     def setup_method(self):
         """Set up test fixtures."""
-        with patch('src.ui.study_admin_ui.DatabaseManager') as mock_db_manager, \
-             patch('src.ui.study_admin_ui.AdminLogic') as mock_admin_logic:
-            
-            self.mock_db_manager = mock_db_manager.return_value
+        with patch('src.logic.admin_logic.AdminLogic') as mock_admin_logic:
             self.mock_admin_logic = mock_admin_logic.return_value
-            
             self.admin_ui = StudyAdminUI()
 
     @patch('streamlit.title')
@@ -406,8 +402,7 @@ class TestStudyAdminUIIntegration:
             mock_open.return_value.__exit__.return_value = None
             
             # Create admin UI and simulate button click
-            with patch('src.ui.study_admin_ui.DatabaseManager'), \
-                 patch('src.ui.study_admin_ui.AdminLogic'):
+            with patch('src.logic.admin_logic.AdminLogic'):
                 
                 admin_ui = StudyAdminUI()
                 
@@ -443,8 +438,7 @@ class TestStudyAdminUIIntegration:
         # 4. UI feedback display
         
         # For now, we'll test the logic flow with mocked components
-        with patch('src.ui.study_admin_ui.DatabaseManager') as mock_db_manager, \
-             patch('src.ui.study_admin_ui.AdminLogic') as mock_admin_logic_class:
+        with patch('src.logic.admin_logic.AdminLogic') as mock_admin_logic_class:
             
             mock_admin_logic = mock_admin_logic_class.return_value
             
