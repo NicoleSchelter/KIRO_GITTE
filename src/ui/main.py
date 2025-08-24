@@ -62,9 +62,13 @@ def main():
     # Initialize tooltip system
     tooltip_integration = get_tooltip_integration()
 
-    # Initialize session state
-    if "current_time" not in st.session_state:
-        st.session_state.current_time = datetime.now()
+    # Initialize session state safely
+    from src.ui.session_state_manager import SessionStateManager
+    SessionStateManager.initialize_session_state()
+    
+    # Set current time if not already set
+    if not SessionStateManager.get('current_time'):
+        SessionStateManager.set('current_time', datetime.now())
 
     # Check authentication
     user_id = require_authentication()

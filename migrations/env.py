@@ -24,10 +24,9 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Override sqlalchemy.url with Env-Var
-db_url = os.getenv("DATABASE_URL")
-if db_url:
-    config.set_main_option("sqlalchemy.url", db_url)
+# UNIFIED DSN: Use centralized config DSN (supports both POSTGRES_DSN and DATABASE_URL)
+unified_dsn = app_config.database.dsn
+config.set_main_option("sqlalchemy.url", unified_dsn)
 
 # add your model's MetaData object here
 # for 'autogenerate' support
