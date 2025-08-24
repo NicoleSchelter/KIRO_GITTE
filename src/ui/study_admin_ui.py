@@ -15,7 +15,7 @@ from uuid import UUID
 
 import streamlit as st
 
-from src.data.database import DatabaseManager, get_session
+from src.data.database import get_session
 from src.logic.admin_logic import AdminLogic
 from src.services.admin_service import AdminService
 
@@ -27,8 +27,7 @@ class StudyAdminUI:
 
     def __init__(self):
         """Initialize study admin UI."""
-        self.db_manager = DatabaseManager()
-        self.admin_logic = AdminLogic(self.db_manager)
+        self.admin_logic = AdminLogic()
 
     def render_admin_dashboard(self) -> None:
         """

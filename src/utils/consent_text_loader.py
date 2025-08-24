@@ -6,7 +6,6 @@ Loads detailed consent information from markdown files.
 import logging
 from pathlib import Path
 from typing import Dict, Optional
-import streamlit as st
 
 from src.data.models import ConsentType
 
@@ -84,6 +83,8 @@ def render_consent_text_expander(consent_type: ConsentType, label: str = None) -
         label: Custom label for the expander (defaults to consent type display name)
     """
     try:
+        import streamlit as st
+        
         text = load_consent_text(consent_type)
         
         if not text:
@@ -98,7 +99,11 @@ def render_consent_text_expander(consent_type: ConsentType, label: str = None) -
             
     except Exception as e:
         logger.error(f"Error rendering consent text expander for {consent_type}: {e}")
-        st.error("Error loading detailed consent information.")
+        try:
+            import streamlit as st
+            st.error("Error loading detailed consent information.")
+        except ImportError:
+            pass
 
 
 def render_consent_text_modal(consent_type: ConsentType) -> None:
@@ -109,6 +114,8 @@ def render_consent_text_modal(consent_type: ConsentType) -> None:
         consent_type: The type of consent to display
     """
     try:
+        import streamlit as st
+        
         text = load_consent_text(consent_type)
         
         if not text:
@@ -136,11 +143,13 @@ def render_consent_text_modal(consent_type: ConsentType) -> None:
                     
     except Exception as e:
         logger.error(f"Error rendering consent text modal for {consent_type}: {e}")
-        st.error("Error loading detailed consent information.")
+        try:
+            import streamlit as st
+            st.error("Error loading detailed consent information.")
+        except ImportError:
+            pass
 
 
-# Cache consent texts for performance
-@st.cache_data
 def get_cached_consent_text(consent_type_value: str) -> Optional[str]:
     """
     Get cached consent text for improved performance.
@@ -152,8 +161,23 @@ def get_cached_consent_text(consent_type_value: str) -> Optional[str]:
         Cached markdown content
     """
     try:
-        consent_type = ConsentType(consent_type_value)
-        return load_consent_text(consent_type)
+        import streamlit as st
+        
+        # Use streamlit cache if available
+        @st.cache_data
+        def _cached_load(consent_type_value: str) -> Optional[str]:
+            consent_type = ConsentType(consent_type_value)
+            return load_consent_text(consent_type)
+            
+        return _cached_load(consent_type_value)
+    except ImportError:
+        # Fallback without caching if streamlit not available
+        try:
+            consent_type = ConsentType(consent_type_value)
+            return load_consent_text(consent_type)
+        except ValueError:
+            logger.error(f"Invalid consent type value: {consent_type_value}")
+            return None
     except ValueError:
         logger.error(f"Invalid consent type value: {consent_type_value}")
         return None

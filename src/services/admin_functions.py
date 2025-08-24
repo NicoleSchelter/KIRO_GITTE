@@ -6,7 +6,7 @@ Provides easy-to-use functions for database initialization and reset operations.
 import logging
 from typing import Any
 
-from src.data.database import DatabaseManager, db_manager, get_session
+from src.data.database import get_session
 from src.logic.admin_logic import AdminLogic, InitializationResult, ResetResult
 from src.services.admin_service import AdminService
 

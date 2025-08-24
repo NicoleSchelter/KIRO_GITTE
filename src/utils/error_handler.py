@@ -7,7 +7,6 @@ from typing import Any, Dict, Optional
 from uuid import uuid4
 import logging
 import re
-import streamlit as st
 import sys
 import traceback
 from collections.abc import Callable
@@ -224,19 +223,24 @@ class ErrorHandler:
 
     def _show_user_message(self, error: GITTEError) -> None:
         """Show user-friendly error message in Streamlit."""
-        if error.severity == ErrorSeverity.CRITICAL:
-            st.error(f"🚨 {error.user_message}")
-        elif error.severity == ErrorSeverity.HIGH:
-            st.error(f"❌ {error.user_message}")
-        elif error.severity == ErrorSeverity.MEDIUM:
-            st.warning(f"⚠️ {error.user_message}")
-        else:
-            st.info(f"ℹ️ {error.user_message}")
+        try:
+            import streamlit as st
+            if error.severity == ErrorSeverity.CRITICAL:
+                st.error(f"🚨 {error.user_message}")
+            elif error.severity == ErrorSeverity.HIGH:
+                st.error(f"❌ {error.user_message}")
+            elif error.severity == ErrorSeverity.MEDIUM:
+                st.warning(f"⚠️ {error.user_message}")
+            else:
+                st.info(f"ℹ️ {error.user_message}")
+        except ImportError:
+            # Fallback to logging if streamlit not available
+            logger.error(f"UI Error: {error.user_message}")
 
     def _is_streamlit_context(self) -> bool:
         """Check if running in Streamlit context."""
         try:
-
+            import streamlit as st
             # Try to access session state to check if in Streamlit context
             _ = st.session_state
             return True
@@ -296,7 +300,7 @@ class ErrorBoundary:
             )
             # Show fallback message
             try:
-
+                import streamlit as st
                 st.error(self.fallback_message)
 
                 if self.show_details and isinstance(exc_val, GITTEError):
@@ -356,7 +360,7 @@ def handle_errors(
                 # Get user ID from session state if available
                 user_id = None
                 try:
-
+                    import streamlit as st
                     user_id = st.session_state.get("user_id")
                 except:
                     pass
@@ -403,7 +407,7 @@ def safe_execute(
         # Get user ID from session state if available
         user_id = None
         try:
-
+            import streamlit as st
             user_id = st.session_state.get("user_id")
         except:
             pass
@@ -446,7 +450,7 @@ def graceful_degradation(
 
                 # Show fallback message
                 try:
-
+                    import streamlit as st
                     st.info(f"ℹ️ {fallback_message}")
                 except:
                     pass
@@ -485,7 +489,8 @@ def clear_error_stats() -> None:
 def render_error_dashboard() -> None:
     """Render error monitoring dashboard in Streamlit."""
     try:
-
+        import streamlit as st
+        
         st.subheader("🚨 Error Monitoring Dashboard")
 
         # Get error statistics
@@ -537,5 +542,9 @@ def render_error_dashboard() -> None:
             st.rerun()
 
     except Exception as e:
-        st.error(f"Error rendering dashboard: {e}")
+        try:
+            import streamlit as st
+            st.error(f"Error rendering dashboard: {e}")
+        except ImportError:
+            logger.error(f"Error rendering dashboard: {e}")
 

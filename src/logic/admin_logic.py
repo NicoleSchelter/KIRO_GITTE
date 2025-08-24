@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from src.data.database import DatabaseManager, get_session
+from src.data.database import get_session
 from src.data.models import (
     Base,
     ChatMessage,
@@ -72,9 +72,9 @@ class ExportResult:
 class AdminLogic:
     """Admin logic for database management and study operations."""
 
-    def __init__(self, db_manager: DatabaseManager):
-        """Initialize admin logic with database manager."""
-        self.db_manager = db_manager
+    def __init__(self):
+        """Initialize admin logic."""
+        pass
         self.logger = logging.getLogger(__name__)
 
     def initialize_database_schema(self) -> InitializationResult:

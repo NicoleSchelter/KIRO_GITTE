@@ -10,7 +10,7 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any
 
-import streamlit as st
+# streamlit imported conditionally where needed
 
 from src.exceptions import RateLimitExceededError, SecurityError, SuspiciousActivityError
 
@@ -293,20 +293,25 @@ def csrf_protect(func: Callable) -> Callable:
 
     @wraps(func)
     def wrapper(*args, **kwargs):
-        # Get user ID from session
-        user_id = st.session_state.get("user_id")
+        try:
+            import streamlit as st
+            # Get user ID from session
+            user_id = st.session_state.get("user_id")
 
-        # Check if CSRF token is present and valid
-        csrf_token = st.session_state.get("csrf_token")
+            # Check if CSRF token is present and valid
+            csrf_token = st.session_state.get("csrf_token")
 
-        if not csrf_token:
-            # Generate new token if none exists
-            csrf_token = security_middleware.generate_csrf_token(user_id)
-            st.session_state.csrf_token = csrf_token
+            if not csrf_token:
+                # Generate new token if none exists
+                csrf_token = security_middleware.generate_csrf_token(user_id)
+                st.session_state.csrf_token = csrf_token
 
-        # For form submissions, validate the token
-        if hasattr(st, "form_submit_button") and st.session_state.get("form_submitted"):
-            submitted_token = st.session_state.get("submitted_csrf_token")
+            # For form submissions, validate the token
+            if hasattr(st, "form_submit_button") and st.session_state.get("form_submitted"):
+                submitted_token = st.session_state.get("submitted_csrf_token")
+        except ImportError:
+            # If streamlit not available, skip CSRF protection
+            pass
 
             if not security_middleware.validate_csrf_token(submitted_token, user_id):
                 raise CSRFError("Invalid or missing CSRF token")
@@ -332,8 +337,12 @@ def rate_limit(max_requests: int = 100, window_seconds: int = 60) -> Callable:
         @wraps(func)
         def wrapper(*args, **kwargs):
             # Get identifier (user ID or IP)
-            user_id = st.session_state.get("user_id")
-            identifier = user_id or "anonymous"
+            try:
+                import streamlit as st
+                user_id = st.session_state.get("user_id")
+                identifier = user_id or "anonymous"
+            except ImportError:
+                identifier = "anonymous"
 
             # Check rate limit
             if not security_middleware.check_rate_limit(identifier, max_requests):
@@ -419,13 +428,21 @@ class SecureForm:
 
     def __init__(self, form_key: str):
         self.form_key = form_key
-        self.csrf_token = security_middleware.generate_csrf_token(st.session_state.get("user_id"))
+        try:
+            import streamlit as st
+            self.csrf_token = security_middleware.generate_csrf_token(st.session_state.get("user_id"))
+        except ImportError:
+            self.csrf_token = security_middleware.generate_csrf_token(None)
 
     def __enter__(self):
         """Enter form context."""
-        # Store CSRF token in session
-        st.session_state[f"csrf_token_{self.form_key}"] = self.csrf_token
-        return st.form(self.form_key)
+        try:
+            import streamlit as st
+            # Store CSRF token in session
+            st.session_state[f"csrf_token_{self.form_key}"] = self.csrf_token
+            return st.form(self.form_key)
+        except ImportError:
+            return None
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Exit form context."""
@@ -433,16 +450,21 @@ class SecureForm:
 
     def submit_button(self, label: str, **kwargs) -> bool:
         """Create secure submit button with CSRF protection."""
-        submitted = st.form_submit_button(label, **kwargs)
+        try:
+            import streamlit as st
+            submitted = st.form_submit_button(label, **kwargs)
 
-        if submitted:
-            # Validate CSRF token
-            stored_token = st.session_state.get(f"csrf_token_{self.form_key}")
-            user_id = st.session_state.get("user_id")
+            if submitted:
+                # Validate CSRF token
+                stored_token = st.session_state.get(f"csrf_token_{self.form_key}")
+                user_id = st.session_state.get("user_id")
 
-            if not security_middleware.validate_csrf_token(stored_token, user_id):
-                st.error("Security validation failed. Please refresh the page and try again.")
-                return False
+                if not security_middleware.validate_csrf_token(stored_token, user_id):
+                    st.error("Security validation failed. Please refresh the page and try again.")
+                    return False
+            return submitted
+        except ImportError:
+            return False
 
         return submitted
 

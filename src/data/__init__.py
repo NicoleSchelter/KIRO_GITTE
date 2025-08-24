@@ -1,11 +1,9 @@
 # Data Layer - Data persistence, schema management, migrations
 
 from .database import (
-                       DatabaseManager,
                        close_database,
                        create_all_tables,
                        database_transaction,
-                       db_manager,
                        get_session,
                        get_session_sync,
                        health_check,
@@ -70,8 +68,6 @@ from .schemas import (
 
 __all__ = [
     # Database management
-    "DatabaseManager",
-    "db_manager",
     "get_session",
     "get_session_sync",
     "initialize_database",

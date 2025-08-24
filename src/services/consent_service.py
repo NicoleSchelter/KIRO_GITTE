@@ -3,6 +3,8 @@ Consent service for study participation in GITTE system.
 Provides service layer abstraction for consent management operations using pseudonyms.
 """
 
+from __future__ import annotations
+
 import logging
 from typing import Any, Dict, List
 from uuid import UUID
@@ -13,16 +15,6 @@ from src.data.repositories import StudyConsentRepository
 from src.logic.consent_logic import ConsentLogic
 
 logger = logging.getLogger(__name__)
-
-
-def get_consent_service() -> ConsentService:
-    """Get consent service instance."""
-    return ConsentService()
-
-
-def get_study_consent_service() -> ConsentService:
-    """Get study consent service instance."""
-    return ConsentService()
 
 
 class ConsentService:
@@ -312,6 +304,11 @@ class ConsentService:
 
 # Global consent service instance for study participation
 study_consent_service = ConsentService()
+
+
+def get_consent_service() -> ConsentService:
+    """Get consent service instance."""
+    return ConsentService()
 
 
 def get_study_consent_service() -> ConsentService:
