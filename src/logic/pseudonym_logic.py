@@ -165,34 +165,7 @@ class PseudonymLogic:
                     pseudonym_repo = PseudonymRepository(session)
                     consent_repo = StudyConsentRepository(session)
                     
-                    # Check if user already has an active pseudonym
-                    existing_pseudonym = pseudonym_repo.get_by_user_id(user_id)
-                    if existing_pseudonym:
-                        # If pseudonym exists and is active for this user, skip creation
-                        if existing_pseudonym.is_active:
-                            logger.info(f"pseudonym_logic: user {user_id} already has active pseudonym, linking consents")
-                            
-                            # Persist staged consents to existing pseudonym
-                            consent_records = []
-                            for staged_consent in staged_consents:
-                                record = consent_repo.create_consent(
-                                    pseudonym_id=existing_pseudonym.pseudonym_id,
-                                    consent_type=staged_consent["consent_type"],
-                                    granted=staged_consent["granted"],
-                                    version=staged_consent["version"],
-                                    metadata=staged_consent.get("metadata", {})
-                                )
-                                consent_records.append(record)
-                            
-                            return {
-                                "success": True,
-                                "pseudonym_created": False,
-                                "pseudonym": existing_pseudonym,
-                                "consent_records": consent_records,
-                                "attempt": attempt + 1
-                            }
-                        else:
-                            raise PseudonymError("User has inactive pseudonym")
+                    # Note: No longer checking for existing user pseudonyms since we removed user-pseudonym connections
 
                     # Validate pseudonym format and uniqueness
                     validation = self.validate_pseudonym_format(pseudonym_text)
@@ -200,28 +173,27 @@ class PseudonymLogic:
                     if not validation.is_valid:
                         raise InvalidPseudonymFormatError(validation.error_message or "Invalid format")
                     
-                    # Check if pseudonym text exists but is mapped to another user
+                    # Check if pseudonym text already exists
                     existing_by_text = pseudonym_repo.get_by_text(pseudonym_text)
                     if existing_by_text:
-                        # Check if it's mapped to a different user
-                        existing_mapping = pseudonym_repo.get_mapping_by_pseudonym_id(existing_by_text.pseudonym_id)
-                        if existing_mapping and existing_mapping.user_id != user_id:
-                            raise PseudonymNotUniqueError("Pseudonym text exists but is mapped to another user")
+                        # Handle collision by incrementing the last number in the pseudonym
+                        pseudonym_text = self._handle_pseudonym_collision(pseudonym_text, pseudonym_repo)
+                        logger.info(f"Pseudonym collision detected, using: {pseudonym_text}")
 
                     # Generate hash with retry logic
                     pseudonym_hash = self._generate_hash_with_retry(pseudonym_text, user_id)
 
-                    # Create pseudonym with mapping in single transaction
+                    # Create pseudonym without mapping (no user connection)
                     pseudonym_data = PseudonymCreate(pseudonym_text=pseudonym_text)
                     
-                    pseudonym, mapping = pseudonym_repo.create_pseudonym_with_mapping(
-                        pseudonym_data, pseudonym_hash, user_id, created_by
+                    pseudonym = pseudonym_repo.create_pseudonym_standalone(
+                        pseudonym_data, pseudonym_hash, created_by
                     )
                     
-                    if not pseudonym or not mapping:
+                    if not pseudonym:
                         raise PseudonymError("Failed to create pseudonym in database")
 
-                    logger.info(f"pseudonym_logic: created/mapped pseudonym {pseudonym.pseudonym_id} for user {user_id}")
+                    logger.info(f"pseudonym_logic: created standalone pseudonym {pseudonym.pseudonym_id}")
 
                     # Persist all staged consents with the new pseudonym_id
                     consent_records = []
@@ -302,33 +274,33 @@ class PseudonymLogic:
         
         with self.error_handler.error_boundary(StudyErrorCategory.PSEUDONYM_CREATION, context, self.retry_config):
             try:
-                # Check if user already has an active pseudonym
-                existing_pseudonym = self.pseudonym_repository.get_by_user_id(user_id)
-                if existing_pseudonym:
-                    raise PseudonymError("User already has an active pseudonym")
-
-                # Validate pseudonym format and uniqueness
+                # No longer checking for existing user pseudonyms since we removed user-pseudonym connections
+                
+                # Validate pseudonym format
                 validation = self.validate_pseudonym_format(pseudonym_text)
                 
                 if not validation.is_valid:
                     raise InvalidPseudonymFormatError(validation.error_message or "Invalid format")
                 
-                if not validation.is_unique:
-                    raise PseudonymNotUniqueError(validation.error_message or "Not unique")
+                # Handle pseudonym collisions by incrementing the number
+                existing_by_text = self.pseudonym_repository.get_by_text(pseudonym_text)
+                if existing_by_text:
+                    pseudonym_text = self._handle_pseudonym_collision(pseudonym_text, self.pseudonym_repository)
+                    logger.info(f"Pseudonym collision handled, using: {pseudonym_text}")
 
                 # Generate hash with retry logic
                 pseudonym_hash = self._generate_hash_with_retry(pseudonym_text, user_id)
 
-                # Create pseudonym with mapping
+                # Create standalone pseudonym (no user mapping)
                 pseudonym_data = PseudonymCreate(
                     pseudonym_text=pseudonym_text
                 )
                 
-                pseudonym, mapping = self.pseudonym_repository.create_pseudonym_with_mapping(
-                    pseudonym_data, pseudonym_hash, user_id, created_by
+                pseudonym = self.pseudonym_repository.create_pseudonym_standalone(
+                    pseudonym_data, pseudonym_hash, created_by
                 )
                 
-                if not pseudonym or not mapping:
+                if not pseudonym:
                     raise PseudonymError("Failed to create pseudonym in database")
 
                 logger.info(f"Successfully created pseudonym for user {user_id}")
@@ -345,6 +317,57 @@ class PseudonymLogic:
             except Exception as e:
                 logger.error(f"Error creating pseudonym: {e}")
                 raise PseudonymError(f"Failed to create pseudonym: {e}")
+
+    def _handle_pseudonym_collision(self, original_pseudonym: str, pseudonym_repo) -> str:
+        """
+        Handle pseudonym collision by incrementing the last number.
+        
+        Args:
+            original_pseudonym: The original pseudonym text
+            pseudonym_repo: Pseudonym repository for checking existence
+            
+        Returns:
+            str: Modified pseudonym that doesn't exist
+        """
+        import re
+        
+        # Extract the last number from the pseudonym
+        # Pattern: Find the last sequence of digits at the very end of the string
+        match = re.search(r'(\d+)$', original_pseudonym)
+        
+        if match:
+            # Found a number at the end or near end
+            last_number = int(match.group(1))
+            start_pos = match.start(1)
+            end_pos = match.end(1)
+            
+            # Try incrementing the number until we find a unique pseudonym
+            attempt = 0
+            max_attempts = 100  # Prevent infinite loop
+            
+            while attempt < max_attempts:
+                new_number = last_number + attempt + 1
+                new_pseudonym = original_pseudonym[:start_pos] + str(new_number) + original_pseudonym[end_pos:]
+                
+                # Check if this new pseudonym exists
+                if not pseudonym_repo.get_by_text(new_pseudonym):
+                    return new_pseudonym
+                
+                attempt += 1
+            
+            # If we can't find a unique number, append a number
+            return original_pseudonym + "1"
+        else:
+            # No number found, append "1" to the end
+            attempt = 1
+            while attempt <= 100:
+                new_pseudonym = original_pseudonym + str(attempt)
+                if not pseudonym_repo.get_by_text(new_pseudonym):
+                    return new_pseudonym
+                attempt += 1
+            
+            # Fallback - should never reach here
+            return original_pseudonym + "999"
     
     def _generate_hash_with_retry(self, pseudonym_text: str, user_id: UUID, max_retries: int = 3) -> str:
         """Generate pseudonym hash with retry logic for robustness."""
@@ -364,29 +387,17 @@ class PseudonymLogic:
         """
         Get the active pseudonym for a user.
         
+        Note: Since user-pseudonym connections have been removed for privacy,
+        this method now returns None. Users must remember their pseudonyms.
+        
         Args:
             user_id: The user ID
             
         Returns:
-            PseudonymResponse | None: The user's active pseudonym or None
+            PseudonymResponse | None: Always returns None (no user-pseudonym connection)
         """
-        try:
-            pseudonym = self.pseudonym_repository.get_by_user_id(user_id)
-            
-            if not pseudonym:
-                return None
-
-            return PseudonymResponse(
-                pseudonym_id=pseudonym.pseudonym_id,
-                pseudonym_text=pseudonym.pseudonym_text,
-                pseudonym_hash=pseudonym.pseudonym_hash,
-                created_at=pseudonym.created_at,
-                is_active=pseudonym.is_active
-            )
-
-        except Exception as e:
-            logger.error(f"Error getting user pseudonym: {e}")
-            return None
+        logger.info(f"get_user_pseudonym called for user {user_id} - returning None (no user-pseudonym connection)")
+        return None
 
     def deactivate_pseudonym(self, user_id: UUID) -> bool:
         """

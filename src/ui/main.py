@@ -90,10 +90,23 @@ def main():
 def render_participant_interface(user_id: str) -> None:
     """Render interface for participant users with guided onboarding flow."""
 
-    # Use the new onboarding system
-    onboarding_complete = render_guided_onboarding_flow(to_uuid(user_id))
+    # Check if user has already completed onboarding by checking session state or actual completion
+    user_uuid = to_uuid(user_id)
+    
+    # Check session state first
+    session_complete = st.session_state.get('onboarding_complete', False)
+    
+    # If session state indicates completion, show main app
+    if session_complete:
+        render_main_application(user_id)
+        return
+    
+    # Otherwise, use the NEW consent-first onboarding system which will detect completion
+    onboarding_complete = render_guided_onboarding_flow(user_uuid)
 
     if onboarding_complete:
+        # Set session state to avoid re-checking
+        st.session_state.onboarding_complete = True
         render_main_application(user_id)
     # If not complete, the onboarding UI handles the flow
 
@@ -277,25 +290,60 @@ def render_main_application(user_id: str) -> None:
 
 def render_chat_tab(user_id: str) -> None:
     """Render chat tab."""
-
-    if check_and_render_consent_gate(user_id, "chat"):
-        render_chat_interface(user_id)
+    
+    # Check if user has completed onboarding and has a pseudonym
+    pseudonym_uuid = st.session_state.get("created_pseudonym_uuid") or st.session_state.get("generated_pseudonym_uuid")
+    pseudonym_key = st.session_state.get("created_pseudonym_key")
+    
+    if pseudonym_uuid and pseudonym_key and st.session_state.get("onboarding_complete", False):
+        # User has completed onboarding with new system - use study participation chat
+        from src.ui.chat_ui import render_study_participation_chat
+        
+        try:
+            render_study_participation_chat(pseudonym_uuid)
+        except Exception as e:
+            st.error(f"Error loading chat: {e}")
+            # Show debug info
+            with st.expander("Debug Info"):
+                st.write(f"Pseudonym UUID: {pseudonym_uuid}")
+                st.write(f"Pseudonym Key: {pseudonym_key}")
+                st.write(f"UUID Type: {type(pseudonym_uuid)}")
+    else:
+        # No onboarding completed or missing pseudonym data
+        st.warning("Please complete onboarding first to access the chat feature.")
+        if st.button("Go to Onboarding"):
+            st.session_state.onboarding_complete = False
+            st.rerun()
 
 
 def render_images_tab(user_id: str) -> None:
     """Render images tab."""
-
-    if check_and_render_consent_gate(user_id, "image_generation"):
+    
+    # Check if user has completed onboarding and has a pseudonym
+    pseudonym_uuid = st.session_state.get("created_pseudonym_uuid") or st.session_state.get("generated_pseudonym_uuid")
+    pseudonym_key = st.session_state.get("created_pseudonym_key")
+    
+    if pseudonym_uuid and pseudonym_key and st.session_state.get("onboarding_complete", False):
+        # User has completed onboarding with new system - use pseudonym-based operations
+        st.info(f"🔐 Using your participation key: {pseudonym_key}")
+        
         col1, col2 = st.columns([2, 1])
 
         with col1:
             st.subheader("Generate New Avatar")
             embodiment_data = st.session_state.get("embodiment_characteristics", {})
+            # For now, use user_id for image generation until we implement pseudonym-based image generation
             render_image_generation_interface(user_id, embodiment_data)
 
         with col2:
             st.subheader("Your Gallery")
             render_image_gallery(user_id)
+    else:
+        # No onboarding completed or missing pseudonym data
+        st.warning("Please complete onboarding first to access the image generation feature.")
+        if st.button("Go to Onboarding"):
+            st.session_state.onboarding_complete = False
+            st.rerun()
 
 
 def render_progress_tab(user_id: str) -> None:
@@ -335,7 +383,7 @@ def render_settings_tab(user_id: str) -> None:
 
     # Privacy settings
     with st.expander("Privacy & Consent", expanded=False):
-        if st.button("Manage Consent Settings"):
+        if st.button("Manage Consent Settings", key="main_consent_settings_button"):
             st.session_state.show_consent_ui = True
             st.rerun()
 

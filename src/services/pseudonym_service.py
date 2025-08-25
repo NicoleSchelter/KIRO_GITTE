@@ -159,3 +159,33 @@ class PseudonymService:
         """
         pseudonym = self.get_user_pseudonym(user_id)
         return pseudonym is not None
+
+    def get_pseudonym_by_text(self, pseudonym_text: str) -> PseudonymResponse | None:
+        """
+        Get a pseudonym by its text value.
+        
+        Args:
+            pseudonym_text: The pseudonym text to search for
+            
+        Returns:
+            PseudonymResponse | None: The pseudonym if found, None otherwise
+        """
+        with get_session() as session:
+            self._session = session
+            try:
+                logic = self._get_pseudonym_logic()
+                pseudonym = logic.pseudonym_repository.get_by_text(pseudonym_text)
+                
+                if pseudonym:
+                    return PseudonymResponse(
+                        pseudonym_id=pseudonym.pseudonym_id,
+                        user_id=None,  # No user connection in new system
+                        pseudonym_text=pseudonym.pseudonym_text,
+                        pseudonym_hash=pseudonym.pseudonym_hash,
+                        created_at=pseudonym.created_at.isoformat() if pseudonym.created_at else None,
+                        is_active=pseudonym.is_active
+                    )
+                return None
+            finally:
+                self._session = None
+                self.pseudonym_logic = None

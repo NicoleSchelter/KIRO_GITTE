@@ -103,29 +103,29 @@ class PseudonymUI:
             # Update session state
             st.session_state.pseudonym_input = pseudonym_text
             
-            # Validation feedback - validate on every input change
-            if pseudonym_text:
+            # Validation feedback - only validate when NOT in confirmation mode
+            if pseudonym_text and not st.session_state.get("generated_pseudonym_key"):
                 validation = self.pseudonym_service.validate_pseudonym(pseudonym_text)
                 st.session_state.pseudonym_validation = validation
                 
                 if validation.is_valid and validation.is_unique:
                     st.success("✅ Pseudonym is valid and available!")
                 elif validation.is_valid and not validation.is_unique:
-                    st.error("❌ This pseudonym is already taken. Please modify it slightly.")
+                    st.warning("⚠️ This pseudonym exists. A unique variation will be created automatically.")
                 else:
                     st.error(f"❌ {validation.error_message}")
-            else:
+            elif not pseudonym_text:
                 # Clear validation when input is empty
                 st.session_state.pseudonym_validation = None
             
             # Generate button - enabled as soon as input is valid
             col1, col2 = st.columns([2, 1])
             
-            # Check if button should be enabled
+            # Check if button should be enabled - only require valid format, not uniqueness
+            # since collision handling will automatically resolve duplicates
             button_enabled = (pseudonym_text and 
                             st.session_state.pseudonym_validation and 
-                            st.session_state.pseudonym_validation.is_valid and 
-                            st.session_state.pseudonym_validation.is_unique)
+                            st.session_state.pseudonym_validation.is_valid)
             
             with col1:
                 generate_button = st.button(
@@ -133,7 +133,7 @@ class PseudonymUI:
                     type="primary",
                     disabled=not button_enabled,
                     key="generate_pseudonym_btn",
-                    help="Click to confirm this pseudonym as your participation key"
+                    help="Click to confirm. If taken, a unique variation will be created automatically."
                 )
                 
                 # Handle Enter key press (simulate button click)
@@ -148,10 +148,14 @@ class PseudonymUI:
                     st.session_state.generated_pseudonym_id = None
                     st.session_state.generated_pseudonym_key = None
                     st.session_state.last_pseudonym_text = ""
+                    # Clear any confirmation state
+                    if "final_pseudonym_confirmation" in st.session_state:
+                        del st.session_state.final_pseudonym_confirmation
                     st.rerun()
             
             # Handle pseudonym generation
-            if generate_button:
+            if generate_button and not st.session_state.get("generated_pseudonym_key"):
+                # Only create pseudonym if button clicked AND no pseudonym exists in session
                 try:
                     # Check if we have staged consents from Flow B
                     staged_consents = st.session_state.get("buffered_consents", {})
@@ -191,6 +195,7 @@ class PseudonymUI:
                                             del st.session_state.buffered_consents
                                         
                                         st.success("🎉 Participation key confirmed and consents saved successfully!")
+                                        st.rerun()  # Rerun to show confirmation screen
                                     else:
                                         st.error(f"Failed to link consents: {link_result.get('error', 'Unknown error')}")
                                         return False, None
@@ -212,15 +217,23 @@ class PseudonymUI:
                                     
                                     if creation_result["success"]:
                                         pseudonym = creation_result["pseudonym"]
-                                        # Store the pseudonym text as the key, not the UUID
-                                        st.session_state.generated_pseudonym_key = pseudonym_text
-                                        st.session_state.generated_pseudonym_id = str(pseudonym.pseudonym_id)  # Keep for compatibility
+                                        # Store the ACTUAL pseudonym text that was created (may be different due to collision handling)
+                                        actual_pseudonym_text = pseudonym.pseudonym_text
+                                        st.session_state.generated_pseudonym_key = actual_pseudonym_text
+                                        st.session_state.generated_pseudonym_id = str(pseudonym.pseudonym_id)  # Store UUID as string
+                                        st.session_state.generated_pseudonym_uuid = pseudonym.pseudonym_id  # Store actual UUID object
                                         
                                         # Clear buffered consents
                                         if "buffered_consents" in st.session_state:
                                             del st.session_state.buffered_consents
                                         
-                                        st.success("🎉 Participation key created and consents saved successfully!")
+                                        # Show appropriate message based on whether collision handling occurred
+                                        if actual_pseudonym_text != pseudonym_text:
+                                            st.success(f"🎉 Participation key created successfully!")
+                                            st.info(f"ℹ️ Your pseudonym was automatically adjusted to '{actual_pseudonym_text}' to ensure uniqueness.")
+                                        else:
+                                            st.success("🎉 Participation key created and consents saved successfully!")
+                                        st.rerun()  # Rerun to show confirmation screen
                                     else:
                                         st.error(f"Failed to create pseudonym: {creation_result.get('error', 'Unknown error')}")
                                         return False, None
@@ -236,55 +249,22 @@ class PseudonymUI:
                         )
                         
                         if pseudonym_response:
-                            # Store the pseudonym text as the key, not the UUID
-                            st.session_state.generated_pseudonym_key = pseudonym_text
-                            st.session_state.generated_pseudonym_id = str(pseudonym_response.pseudonym_id)  # Keep for compatibility
-                            st.success("🎉 Participation key created successfully!")
+                            # Store the ACTUAL pseudonym text that was created (may be different due to collision handling)
+                            actual_pseudonym_text = pseudonym_response.pseudonym_text
+                            st.session_state.generated_pseudonym_key = actual_pseudonym_text
+                            st.session_state.generated_pseudonym_id = str(pseudonym_response.pseudonym_id)  # Store UUID as string
+                            st.session_state.generated_pseudonym_uuid = pseudonym_response.pseudonym_id  # Store actual UUID object
+                            
+                            # Show appropriate message based on whether collision handling occurred
+                            if actual_pseudonym_text != pseudonym_text:
+                                st.success(f"🎉 Participation key created successfully!")
+                                st.info(f"ℹ️ Your pseudonym was automatically adjusted to '{actual_pseudonym_text}' to ensure uniqueness.")
+                            else:
+                                st.success("🎉 Participation key created successfully!")
+                            st.rerun()  # Rerun to show confirmation screen
                         else:
                             st.error("Failed to create pseudonym. Please try again.")
                             return False, None
-                    
-                    # Show the participation key (which is the pseudonym itself)
-                    st.subheader("Your Participation Key")
-                    st.success("✅ Your participation key has been generated!")
-                    st.info("**Important:** Your participation key is your pseudonym. Keep it safe - you'll need it to delete your data later.")
-                    st.info("We do not store personal data. Your pseudonym links your study responses and allows you to delete them later.")
-                    
-                    # Display the pseudonym as the key
-                    st.markdown("**Your Participation Key:**")
-                    st.code(pseudonym_text, language=None)
-                    
-                    # Copy button for the pseudonym
-                    if st.button("📋 Copy Pseudonym", key="copy_key_btn"):
-                        st.toast(f"Pseudonym '{pseudonym_text}' copied! Keep it safe.", icon="📋")
-                    
-                    st.markdown("---")
-                    
-                    # Confirmation section
-                    st.subheader("Confirm and Continue")
-                    st.markdown(f"""
-                    **Please confirm:** I understand that my pseudonym `{pseudonym_text}` will be used to:
-                    - Link my study responses anonymously
-                    - Allow me to delete my data later if needed
-                    - Keep my personal information private
-                    """)
-                    
-                    # Single confirmation checkbox
-                    final_confirmation = st.checkbox(
-                        f"✅ I confirm that '{pseudonym_text}' is my participation key and I will keep it safe",
-                        key="final_pseudonym_confirmation",
-                        value=False
-                    )
-                    
-                    # Final confirmation button
-                    if st.button(
-                        "Continue to Study",
-                        type="primary",
-                        disabled=not final_confirmation,
-                        key="final_confirm_btn"
-                    ):
-                        # Return the pseudonym text as the key, not the UUID
-                        return True, pseudonym_text
                         
                 except InvalidPseudonymFormatError as e:
                     st.error(f"Invalid pseudonym format: {e}")
@@ -296,9 +276,74 @@ class PseudonymUI:
                     logger.error(f"Unexpected error creating pseudonym: {e}")
                     st.error("An unexpected error occurred. Please try again.")
             
+            # Show confirmation screen if pseudonym has been created
+            elif st.session_state.get("generated_pseudonym_key"):
+                # Get the actual pseudonym that was created (may be different from input due to collision handling)
+                actual_pseudonym_text = st.session_state.generated_pseudonym_key
+                
+                # Show the participation key (which is the pseudonym itself)
+                st.subheader("Your Participation Key")
+                st.success("✅ Your participation key has been generated!")
+                st.info("**Important:** Your participation key is your pseudonym. Keep it safe - you'll need it to delete your data later.")
+                st.info("We do not store personal data. Your pseudonym links your study responses and allows you to delete them later.")
+                
+                # Display the pseudonym as the key
+                st.markdown("**Your Participation Key:**")
+                st.code(actual_pseudonym_text, language=None)
+                
+                # Copy button for the pseudonym
+                if st.button("📋 Copy Pseudonym", key="copy_key_btn"):
+                    st.toast(f"Pseudonym '{actual_pseudonym_text}' copied! Keep it safe.", icon="📋")
+                
+                st.markdown("---")
+                
+                # Confirmation section
+                st.subheader("Confirm and Continue")
+                st.markdown(f"""
+                **Please confirm:** I understand that my pseudonym `{actual_pseudonym_text}` will be used to:
+                - Link my study responses anonymously
+                - Allow me to delete my data later if needed
+                - Keep my personal information private
+                """)
+                
+                # Single confirmation checkbox
+                final_confirmation = st.checkbox(
+                    f"✅ I confirm that '{actual_pseudonym_text}' is my participation key and I will keep it safe",
+                    key="final_pseudonym_confirmation",
+                    value=False
+                )
+                
+                # Final confirmation button
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    if st.button(
+                        "Continue to Study",
+                        type="primary",
+                        disabled=not final_confirmation,
+                        key="final_confirm_btn"
+                    ):
+                        # Return the actual pseudonym text as the key
+                        return True, actual_pseudonym_text
+                
+                with col2:
+                    if st.button("Start Over", key="start_over_btn"):
+                        # Clear all pseudonym-related session state
+                        st.session_state.pseudonym_input = ""
+                        st.session_state.pseudonym_validation = None
+                        st.session_state.generated_pseudonym_id = None
+                        st.session_state.generated_pseudonym_key = None
+                        st.session_state.last_pseudonym_text = ""
+                        if "final_pseudonym_confirmation" in st.session_state:
+                            del st.session_state.final_pseudonym_confirmation
+                        st.rerun()
+            
             # Show current status
             if st.session_state.get("generated_pseudonym_key"):
-                st.info("✅ Participation key created. Please confirm above to continue.")
+                return False, None  # Stay in confirmation mode
+            else:
+                # Show status for input mode
+                st.info("ℹ️ Enter a valid pseudonym above and click the button to create your participation key.")
             
             return False, None
             
@@ -366,6 +411,11 @@ class PseudonymUI:
                 disabled=not final_confirmation,
                 key="existing_confirm_btn"
             ):
+                # Store the existing pseudonym data in session state for main app
+                st.session_state.generated_pseudonym_key = existing_pseudonym.pseudonym_text
+                st.session_state.generated_pseudonym_id = str(existing_pseudonym.pseudonym_id)
+                st.session_state.generated_pseudonym_uuid = existing_pseudonym.pseudonym_id
+                
                 # Return the pseudonym text as the key
                 return True, existing_pseudonym.pseudonym_text
             

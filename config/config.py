@@ -51,7 +51,7 @@ class LLMConfig:
 
     ollama_url: str = "http://localhost:11434"
     models: dict[str, str] = field(
-        default_factory=lambda: {"default": "llama3", "creative": "mistral", "vision": "llava"}
+        default_factory=lambda: {"default": "llama3.2", "creative": "mistral", "vision": "llava"}
     )
     timeout_seconds: int = 30
     max_retries: int = 3

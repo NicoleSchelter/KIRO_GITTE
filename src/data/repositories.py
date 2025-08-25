@@ -1395,6 +1395,32 @@ class PseudonymRepository(BaseRepository):
             self.session.rollback()
             return None, None
 
+    def create_pseudonym_standalone(
+        self, 
+        pseudonym_data: PseudonymCreate, 
+        pseudonym_hash: str, 
+        created_by: str = "system"
+    ) -> Pseudonym | None:
+        """Create a new pseudonym without user mapping (no user connection)."""
+        try:
+            # Create pseudonym without mapping
+            pseudonym = Pseudonym(
+                pseudonym_text=pseudonym_data.pseudonym_text,
+                pseudonym_hash=pseudonym_hash,
+            )
+            self.session.add(pseudonym)
+            self.session.flush()  # Get the pseudonym_id
+            
+            return pseudonym
+        except IntegrityError as e:
+            logger.error(f"Integrity error creating standalone pseudonym: {e}")
+            self.session.rollback()
+            return None
+        except Exception as e:
+            logger.error(f"Error creating standalone pseudonym: {e}")
+            self.session.rollback()
+            return None
+
     def get_by_user_id(self, user_id: UUID) -> Pseudonym | None:
         """Get active pseudonym by user ID through mapping."""
         try:
@@ -1435,6 +1461,10 @@ class PseudonymRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Error getting pseudonym by text {pseudonym_text}: {e}")
             return None
+
+    def get_by_text(self, pseudonym_text: str) -> Pseudonym | None:
+        """Alias for get_by_pseudonym_text for consistency."""
+        return self.get_by_pseudonym_text(pseudonym_text)
 
     def is_pseudonym_unique(self, pseudonym_text: str) -> bool:
         """Check if pseudonym text is unique."""

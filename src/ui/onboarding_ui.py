@@ -30,9 +30,10 @@ class OnboardingUI:
         Render the consent-first onboarding flow.
         
         Flow:
-        1. Collect consents (buffer in session state)
-        2. Create pseudonym
-        3. Finalize: persist buffered consents with pseudonym
+        1. Check if user has already completed onboarding
+        2. Collect consents (buffer in session state)
+        3. Create pseudonym
+        4. Finalize: persist buffered consents with pseudonym
         
         Args:
             user_id: User identifier
@@ -41,6 +42,12 @@ class OnboardingUI:
             bool: True if onboarding completed successfully
         """
         try:
+            # First, check if user has already completed onboarding
+            if self._is_onboarding_already_complete(user_id):
+                # User has already completed onboarding, set flag and return
+                st.session_state.onboarding_complete = True
+                return True
+            
             # Initialize onboarding state
             if "onboarding_step" not in st.session_state:
                 st.session_state.onboarding_step = "consent"
@@ -78,17 +85,29 @@ class OnboardingUI:
                 pseudonym_created, pseudonym_key = pseudonym_ui.render_pseudonym_creation_screen(user_id)
                 
                 if pseudonym_created and pseudonym_key:
-                    # Store both the pseudonym text (key) and mark as created
+                    # Store both the pseudonym text (key) and UUID
                     st.session_state.created_pseudonym_key = pseudonym_key
-                    st.session_state.created_pseudonym_id = pseudonym_key  # For backward compatibility
-                    
-                    # In Flow B, consents are already persisted, so skip finalization
-                    if st.session_state.get("buffered_consents"):
-                        # Flow B was used - consents already persisted
-                        st.session_state.onboarding_step = "complete"
+                    # Get the actual UUID from the pseudonym creation session state
+                    pseudonym_uuid = st.session_state.get("generated_pseudonym_uuid")
+                    if pseudonym_uuid:
+                        st.session_state.created_pseudonym_id = str(pseudonym_uuid)
+                        st.session_state.created_pseudonym_uuid = pseudonym_uuid
                     else:
-                        # Legacy flow - need finalization
+                        # Fallback: use the string ID if UUID not available
+                        st.session_state.created_pseudonym_id = st.session_state.get("generated_pseudonym_id", pseudonym_key)
+                    
+                    # Check if buffered consents still exist (Flow A) or were consumed by Flow B
+                    buffered_consents_exist = bool(st.session_state.get("buffered_consents"))
+                    logger.info(f"Pseudonym created for user {user_id}, buffered_consents exist: {buffered_consents_exist}")
+                    
+                    if buffered_consents_exist:
+                        # Flow A - buffered consents still exist, need finalization step
                         st.session_state.onboarding_step = "finalize"
+                        logger.info(f"Moving to finalize step (Flow A) for user {user_id}")
+                    else:
+                        # Flow B - buffered consents were consumed during pseudonym creation, go directly to complete
+                        st.session_state.onboarding_step = "complete"
+                        logger.info(f"Moving to complete step (Flow B) for user {user_id}")
                     st.rerun()
 
             # Step 3: Finalization
@@ -109,6 +128,9 @@ class OnboardingUI:
             elif current_step == "complete":
                 st.header("🎉 Welcome to GITTE!")
                 
+                # Add balloons celebration
+                st.balloons()
+                
                 st.success("Your registration is complete!")
                 
                 st.markdown("""
@@ -125,6 +147,8 @@ class OnboardingUI:
                 if st.button("Start Using GITTE", type="primary"):
                     # Clear onboarding state
                     self._clear_onboarding_state()
+                    # Set completion flag for main application
+                    st.session_state.onboarding_complete = True
                     return True
 
             return False
@@ -248,15 +272,123 @@ class OnboardingUI:
             "onboarding_step",
             "buffered_consents", 
             "created_pseudonym_id",
+            "created_pseudonym_uuid",
             "consent_form_state",
             "pseudonym_input",
             "pseudonym_validation",
-            "generated_pseudonym_id"
+            "generated_pseudonym_id",
+            "generated_pseudonym_key",
+            "generated_pseudonym_uuid"
         ]
         
         for key in keys_to_clear:
             if key in st.session_state:
                 del st.session_state[key]
+
+    def _is_onboarding_already_complete(self, user_id: UUID) -> bool:
+        """
+        Check if user has already completed onboarding.
+        
+        Since user-pseudonym connections have been removed for privacy,
+        we check for:
+        1. Session state indicating completion
+        2. Recent successful pseudonym creation in this session
+        3. Database-driven verification (fallback when session state is unreliable)
+        
+        Args:
+            user_id: User identifier
+            
+        Returns:
+            bool: True if onboarding appears complete
+        """
+        # Check if user has session state indicating completion
+        if st.session_state.get("onboarding_complete", False):
+            logger.info(f"Onboarding completion check for user {user_id} - returning True (session state flag set)")
+            return True
+            
+        # Check if user just completed pseudonym creation with consents in this session
+        if (
+            st.session_state.get("created_pseudonym_key") and 
+            st.session_state.get("onboarding_step") == "complete"
+        ):
+            logger.info(f"Onboarding completion check for user {user_id} - returning True (just completed in session)")
+            return True
+        
+        # Database-driven verification as fallback
+        try:
+            # Check if user has created any pseudonyms (indicates onboarding started/completed)
+            # Since we removed user-pseudonym connections, we check for recent pseudonym activity
+            from src.data.database import get_session
+            from src.data.repositories import PseudonymRepository, StudyConsentRepository
+            from src.data.models import Pseudonym  # Import Pseudonym model directly
+            
+            with get_session() as session:
+                pseudonym_repo = PseudonymRepository(session)
+                consent_repo = StudyConsentRepository(session)
+                
+                # Strategy 1: Check for very recent pseudonyms (last 1 hour - more precise)
+                from datetime import datetime, timedelta
+                very_recent_time = datetime.utcnow() - timedelta(hours=1)
+                
+                # Get very recent pseudonyms first
+                very_recent_pseudonyms = session.query(Pseudonym).filter(
+                    Pseudonym.created_at >= very_recent_time,
+                    Pseudonym.is_active == True
+                ).order_by(Pseudonym.created_at.desc()).all()
+                
+                logger.info(f"Found {len(very_recent_pseudonyms)} very recent pseudonyms for completion check")
+                
+                for pseudonym in very_recent_pseudonyms:
+                    # Check if this pseudonym has all required consents
+                    consent_records = consent_repo.get_by_pseudonym(pseudonym.pseudonym_id)
+                    required_consent_types = ['data_protection', 'ai_interaction', 'study_participation']
+                    
+                    granted_consents = [record.consent_type for record in consent_records if record.granted and not record.revoked_at]
+                    
+                    logger.info(f"Pseudonym {pseudonym.pseudonym_id} has consents: {granted_consents}")
+                    
+                    if all(ct in granted_consents for ct in required_consent_types):
+                        # Found a recently created pseudonym with all consents
+                        logger.info(f"Found completed pseudonym {pseudonym.pseudonym_id}")
+                        
+                        # IMPORTANT: We can't reliably link this to the current user due to privacy design
+                        # So we'll be more conservative and NOT mark onboarding as complete
+                        # This will force the user to go through onboarding, ensuring they create their own pseudonym
+                        logger.info(f"Onboarding completion check for user {user_id} - returning False (conservative approach due to privacy design)")
+                        return False
+                
+                # Strategy 2: Fallback to broader search (last 24 hours) if nothing found
+                broader_time = datetime.utcnow() - timedelta(hours=24)
+                
+                broader_pseudonyms = session.query(Pseudonym).filter(
+                    Pseudonym.created_at >= broader_time,
+                    Pseudonym.is_active == True
+                ).order_by(Pseudonym.created_at.desc()).limit(10).all()  # Limit to prevent excessive checks
+                
+                logger.info(f"Checking {len(broader_pseudonyms)} broader recent pseudonyms for completion")
+                
+                for pseudonym in broader_pseudonyms:
+                    # Check if this pseudonym has all required consents
+                    consent_records = consent_repo.get_by_pseudonym(pseudonym.pseudonym_id)
+                    required_consent_types = ['data_protection', 'ai_interaction', 'study_participation']
+                    
+                    granted_consents = [record.consent_type for record in consent_records if record.granted and not record.revoked_at]
+                    
+                    if all(ct in granted_consents for ct in required_consent_types):
+                        # Found a completed pseudonym
+                        logger.info(f"Found completed pseudonym {pseudonym.pseudonym_id} in broader search")
+                        
+                        # IMPORTANT: We can't reliably link this to the current user due to privacy design
+                        # So we'll be more conservative and NOT mark onboarding as complete
+                        logger.info(f"Onboarding completion check for user {user_id} - returning False (conservative approach due to privacy design)")
+                        return False
+                        
+        except Exception as e:
+            logger.error(f"Error in database-driven completion check: {e}")
+            # On error, default to not complete for security
+        
+        logger.info(f"Onboarding completion check for user {user_id} - returning False (no completion indicators)")
+        return False
 
     def render_onboarding_status(self, user_id: UUID) -> None:
         """

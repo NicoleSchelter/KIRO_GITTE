@@ -766,7 +766,11 @@ class ChatUI:
             
             # Generate image from PALD data
             with st.spinner("🎨 Generating your learning assistant image..."):
-                image_result = self.image_generation_logic.generate_image_from_pald(pald_data)
+                image_result = self.image_generation_logic.generate_image_from_pald(
+                    pseudonym_id=pseudonym_id,
+                    session_id=session_data["session_id"],
+                    pald_data=pald_data
+                )
             
             if image_result.success:
                 st.session_state["pald_processing_status"] = "describing_image"
@@ -1279,27 +1283,48 @@ class ChatUI:
             self.chat_logic = ChatLogic(llm_service)
         
         if self.image_generation_logic is None:
-            # Initialize services with database session
+            # Initialize services with synchronous database session
             if "db_session" not in st.session_state:
-                st.session_state.db_session = get_session()
+                from src.data.database_factory import get_session_sync
+                st.session_state.db_session = get_session_sync()
             
             image_service = ImageGenerationService(st.session_state.db_session)
             self.image_generation_logic = ImageGenerationLogic(image_service)
         
         if self.chat_service is None:
             if "db_session" not in st.session_state:
-                st.session_state.db_session = get_session()
+                from src.data.database_factory import get_session_sync
+                st.session_state.db_session = get_session_sync()
             self.chat_service = ChatService(st.session_state.db_session)
 
     def _check_study_chat_consent(self, pseudonym_id: UUID) -> bool:
         """Check if participant has consent for AI interaction in study context."""
         try:
-            # For study participation, we assume consent was already checked during onboarding
-            # But we can add additional checks here if needed
+            # Import here to avoid circular imports
+            from src.services.consent_service import get_study_consent_service
+            from src.data.models import StudyConsentType
+            
+            consent_service = get_study_consent_service()
+            
+            # Check if the pseudonym has AI interaction consent
+            has_consent = consent_service.check_consent(
+                pseudonym_id=pseudonym_id,
+                consent_type=StudyConsentType.AI_INTERACTION
+            )
+            
+            if not has_consent:
+                st.error("🚫 AI Interaction consent is required to use the chat feature.")
+                st.warning("Please complete the onboarding process to grant the necessary consents.")
+                if st.button("Return to Onboarding"):
+                    st.session_state.onboarding_complete = False
+                    st.rerun()
+                return False
+                
             return True
+            
         except Exception as e:
             logger.error(f"Error checking study chat consent for pseudonym {pseudonym_id}: {e}")
-            st.error("Error checking consent status.")
+            st.error("Error checking consent status. Please try again or contact support.")
             return False
 
     def _initialize_study_session_state(self, pseudonym_id: UUID) -> None:

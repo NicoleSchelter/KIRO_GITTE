@@ -73,17 +73,22 @@ class LLMService:
             LLMProviderError: If generation fails
         """
         # Resolve model name
-        model = model or self._get_default_model()
-
-        # Validate model availability
-        if not self._is_model_available(model):
-            raise LLMModelError(f"Model '{model}' is not available")
+        requested_model = model or self._get_default_model()
+        
+        # Try to find an available model with fallback logic
+        available_model = self._find_available_model(requested_model)
+        
+        if not available_model:
+            raise LLMModelError(f"No available models found. Requested: '{requested_model}'")
+        
+        if available_model != requested_model:
+            logger.warning(f"Model '{requested_model}' not available, using fallback '{available_model}'")
 
         # Prepare request
-        request = LLMRequest(prompt=prompt, model=model, parameters=parameters or {}, stream=False)
+        request = LLMRequest(prompt=prompt, model=available_model, parameters=parameters or {}, stream=False)
 
         logger.info(
-            f"Generating LLM response: model={model}, prompt_length={len(prompt)}, user_id={user_id}"
+            f"Generating LLM response: model={available_model}, prompt_length={len(prompt)}, user_id={user_id}"
         )
 
         try:
@@ -91,7 +96,7 @@ class LLMService:
 
             # Log successful generation
             logger.info(
-                f"LLM response generated: model={model}, latency={response.latency_ms}ms, tokens={response.tokens_used}"
+                f"LLM response generated: model={available_model}, latency={response.latency_ms}ms, tokens={response.tokens_used}"
             )
 
             return response
@@ -303,7 +308,53 @@ class LLMService:
 
     def _get_default_model(self) -> str:
         """Get the default model name."""
-        return config.llm.models.get("default", "llama3")
+        return config.llm.models.get("default", "llama3.2")
+
+    def _find_available_model(self, requested_model: str) -> str | None:
+        """
+        Find an available model, trying fallbacks if the requested model is unavailable.
+        
+        Args:
+            requested_model: The originally requested model
+            
+        Returns:
+            str | None: Available model name or None if no models are available
+        """
+        # List of models to try in order of preference
+        model_fallbacks = [
+            requested_model,
+            "llama3.2",
+            "llama3", 
+            "mistral",
+            "llava",
+            self._get_default_model()
+        ]
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_models = []
+        for model in model_fallbacks:
+            if model not in seen:
+                seen.add(model)
+                unique_models.append(model)
+        
+        # Try each model in order
+        for model in unique_models:
+            if self._is_model_available(model):
+                return model
+                
+        # Last resort: try to get any available model
+        try:
+            models_info = self.list_available_models()
+            available_models = list(models_info.get("models", {}).keys())
+            if available_models:
+                fallback_model = available_models[0]
+                logger.warning(f"Using first available model as last resort: {fallback_model}")
+                return fallback_model
+        except Exception as e:
+            logger.error(f"Failed to get available models for fallback: {e}")
+            
+        return None
 
     def _is_model_available(self, model: str) -> bool:
         """

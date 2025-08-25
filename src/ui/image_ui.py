@@ -11,9 +11,9 @@ import streamlit as st
 from PIL import Image
 
 from config.config import get_text
-from src.data.models import ConsentType
+from src.data.models import StudyConsentType
 from src.logic.embodiment import EmbodimentRequest, get_embodiment_logic
-from src.services.consent_service import get_consent_service
+from src.services.consent_service import get_study_consent_service
 from src.services.image_provider import ImageProviderError
 from src.services.image_service import get_image_service
 
@@ -25,7 +25,7 @@ class ImageGenerationUI:
 
     def __init__(self):
         self.embodiment_logic = get_embodiment_logic()
-        self.consent_service = get_consent_service()
+        self.consent_service = get_study_consent_service()
         self.image_service = get_image_service()
 
     def render_image_generation_interface(
@@ -348,11 +348,11 @@ class ImageGenerationUI:
     def _check_image_consent(self, user_id: UUID) -> bool:
         """Check if user has consent for image generation."""
         try:
-            if not self.consent_service.check_consent(user_id, ConsentType.IMAGE_GENERATION):
+            if not self.consent_service.check_consent(user_id, StudyConsentType.AI_INTERACTION):
                 st.error(get_text("error_consent_required"))
                 st.warning("You need to provide consent for image generation to use this feature.")
 
-                if st.button("Manage Consent Settings"):
+                if st.button("Manage Consent Settings", key="image_consent_settings_button"):
                     st.session_state.show_consent_ui = True
                     st.rerun()
 
