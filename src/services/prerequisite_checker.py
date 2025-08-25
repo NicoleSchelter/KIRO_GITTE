@@ -391,13 +391,11 @@ class ConsentStatusChecker(PrerequisiteChecker):
             required = [
                 ConsentType.DATA_PROCESSING,
                 ConsentType.AI_INTERACTION,
-                ConsentType.IMAGE_GENERATION,
             ]
 
             slugs = {
                 ConsentType.DATA_PROCESSING: "data_processing",
                 ConsentType.AI_INTERACTION:  "ai_interaction",   # wichtig für den Test
-                ConsentType.IMAGE_GENERATION: "image_generation",
             }
 
             missing = []

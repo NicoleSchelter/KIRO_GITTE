@@ -79,7 +79,7 @@ class TestCompleteUserJourneys:
                 ConsentType.DATA_COLLECTION,
                 ConsentType.AI_INTERACTION,
                 ConsentType.PERSONALIZATION,
-                ConsentType.IMAGE_GENERATION,
+                # ConsentType.IMAGE_GENERATION,  # Removed as it's covered by AI_INTERACTION
             ]
 
             for consent_type in consent_types:

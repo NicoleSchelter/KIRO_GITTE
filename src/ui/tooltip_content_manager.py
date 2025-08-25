@@ -151,14 +151,6 @@ class TooltipContentManager:
                 accessibility_label="AI interaction consent - enables chat features"
             ),
             
-            "image_generation_consent": TooltipContent(
-                title="Image Generation Consent",
-                description="Enables creation of visual representations for your learning assistant. Images are generated based on your preferences.",
-                action_text="Required to create and customize your assistant's appearance",
-                help_link="/privacy-policy#image-generation",
-                accessibility_label="Image generation consent - enables avatar creation"
-            ),
-            
             "analytics_consent": TooltipContent(
                 title="Analytics Consent (Optional)",
                 description="Helps us understand how GITTE is used to improve the learning experience. All analytics data is anonymized.",

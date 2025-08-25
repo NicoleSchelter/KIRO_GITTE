@@ -94,7 +94,7 @@ class OnboardingLogic:
             OnboardingStep.CHAT: [ConsentType.DATA_PROCESSING, ConsentType.AI_INTERACTION],         #!! hier muss noch die Studienteilnahme rein
             OnboardingStep.IMAGE_GENERATION:[                                                       #!! hier muss noch die Studienteilnahme rein
                 ConsentType.DATA_PROCESSING,
-                ConsentType.IMAGE_GENERATION,
+                ConsentType.AI_INTERACTION,  # Use AI_INTERACTION instead
             ],
             OnboardingStep.FEEDBACK: [ConsentType.DATA_PROCESSING],
             OnboardingStep.COMPLETE: [],

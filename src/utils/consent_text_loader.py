@@ -29,7 +29,6 @@ def load_consent_text(consent_type: ConsentType) -> Optional[str]:
         filename_map = {
             ConsentType.DATA_PROCESSING: "data_processing.md",
             ConsentType.AI_INTERACTION: "ai_interaction.md", 
-            ConsentType.IMAGE_GENERATION: "image_generation.md",
             ConsentType.FEDERATED_LEARNING: "federated_learning.md",
             ConsentType.ANALYTICS: "analytics.md",
             ConsentType.INVESTIGATION_PARTICIPATION: "investigation_participation.md",

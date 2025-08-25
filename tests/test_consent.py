@@ -269,7 +269,6 @@ class TestConsentLogic:
         image_consents = consent_logic.get_required_consents_for_operation("image_generation")
         assert ConsentType.DATA_PROCESSING in image_consents
         assert ConsentType.AI_INTERACTION in image_consents
-        assert ConsentType.IMAGE_GENERATION in image_consents
 
         # Test unknown operation (should default to data processing)
         unknown_consents = consent_logic.get_required_consents_for_operation("unknown")

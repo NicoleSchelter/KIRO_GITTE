@@ -355,9 +355,10 @@ class ImageGenerationUI:
         try:
             # For study participants, check the study consent type
             from src.data.models import StudyConsentType
-            if not self.consent_service.check_consent(pseudonym_id, StudyConsentType.IMAGE_GENERATION):
+            # Use AI_INTERACTION consent instead of IMAGE_GENERATION as it's covered by AI generation consent
+            if not self.consent_service.check_consent(pseudonym_id, StudyConsentType.AI_INTERACTION):
                 st.error(get_text("error_consent_required"))
-                st.warning("You need to provide consent for image generation to use this feature.")
+                st.warning("You need to provide consent for AI interaction to use this feature.")
 
                 if st.button("Manage Consent Settings", key="image_consent_settings_button"):
                     st.session_state.show_consent_ui = True

@@ -272,7 +272,6 @@ class ConsentUI:
         display_names = {
             ConsentType.DATA_PROCESSING: "Data Processing",
             ConsentType.AI_INTERACTION: "AI Interaction",
-            ConsentType.IMAGE_GENERATION: "Image Generation",
             ConsentType.FEDERATED_LEARNING: "Federated Learning",
             ConsentType.ANALYTICS: "Analytics & Improvements",
             ConsentType.INVESTIGATION_PARTICIPATION: "Investigation Participation",
@@ -284,7 +283,6 @@ class ConsentUI:
         descriptions = {
             ConsentType.DATA_PROCESSING: "Allow processing of your personal data for core functionality",
             ConsentType.AI_INTERACTION: "Allow AI interactions and chat functionality",
-            ConsentType.IMAGE_GENERATION: "Allow generation of visual representations and avatars",
             ConsentType.FEDERATED_LEARNING: "Participate in privacy-preserving model improvements",
             ConsentType.ANALYTICS: "Allow collection of usage analytics to improve the system",
             ConsentType.INVESTIGATION_PARTICIPATION: "Participate in research study to improve educational AI systems",

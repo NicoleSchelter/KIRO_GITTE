@@ -270,7 +270,6 @@ class ConsentLogic:
             "image_generation": [
                 ConsentType.DATA_PROCESSING,
                 ConsentType.AI_INTERACTION,
-                ConsentType.IMAGE_GENERATION,
             ],
             "data_export": [ConsentType.DATA_PROCESSING, ConsentType.ANALYTICS],
             "federated_learning": [ConsentType.DATA_PROCESSING, ConsentType.FEDERATED_LEARNING],

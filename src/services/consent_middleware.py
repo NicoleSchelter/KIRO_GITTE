@@ -190,11 +190,6 @@ def require_ai_interaction_consent(func: Callable) -> Callable:
     return require_consent(ConsentType.AI_INTERACTION)(func)
 
 
-def require_image_generation_consent(func: Callable) -> Callable:
-    """Decorator to require image generation consent."""
-    return require_consent(ConsentType.IMAGE_GENERATION)(func)
-
-
 def require_federated_learning_consent(func: Callable) -> Callable:
     """Decorator to require federated learning consent."""
     return require_consent(ConsentType.FEDERATED_LEARNING)(func)

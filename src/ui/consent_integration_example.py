@@ -60,8 +60,8 @@ def show_consent_protected_image_generation():
     # Require authentication
     user_id = require_authentication()
 
-    # Check consent gate for image generation
-    if not render_consent_gate(user_id, "image_generation"):
+    # Check consent gate for AI interaction (which now covers image generation)
+    if not render_consent_gate(user_id, "chat"):  # Use chat operation which requires AI_INTERACTION
         st.info("Please provide the required consents to access image generation.")
         return
 
@@ -131,7 +131,6 @@ def show_consent_dashboard():
 
     operations = {
         "chat": "AI Chat Interactions",
-        "image_generation": "Avatar & Image Generation",
         "survey": "Personalization Surveys",
         "federated_learning": "Privacy-Preserving Model Improvements",
     }
