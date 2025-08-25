@@ -332,12 +332,13 @@ def render_images_tab(user_id: str) -> None:
         with col1:
             st.subheader("Generate New Avatar")
             embodiment_data = st.session_state.get("embodiment_characteristics", {})
-            # For now, use user_id for image generation until we implement pseudonym-based image generation
-            render_image_generation_interface(user_id, embodiment_data)
+            # Use pseudonym_id for image generation to match consent storage
+            render_image_generation_interface(pseudonym_uuid, embodiment_data)
 
         with col2:
             st.subheader("Your Gallery")
-            render_image_gallery(user_id)
+            # Use pseudonym_id for image gallery to match consent storage and image retrieval
+            render_image_gallery(pseudonym_uuid)
     else:
         # No onboarding completed or missing pseudonym data
         st.warning("Please complete onboarding first to access the image generation feature.")

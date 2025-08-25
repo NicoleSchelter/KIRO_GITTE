@@ -15,6 +15,8 @@ from config.config import config
 # Note: GeneratedImage, StudyPALDData, StudyPALDType would be used in actual implementation
 from src.exceptions import ValidationError
 from src.services.llm_service import LLMService
+from src.services.image_generation_service import ImageGenerationService
+from src.services.image_service import get_image_service  # Add this import
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +58,9 @@ class ConsistencyLoopResult:
 class ImageGenerationLogic:
     """Logic layer for image generation and PALD consistency processing."""
 
-    def __init__(self, llm_service: LLMService):
+    def __init__(self, image_generation_service: ImageGenerationService, llm_service: LLMService):
+        self.image_generation_service = image_generation_service
+        self.image_service = get_image_service()  # Get the global image service instance
         self.llm_service = llm_service
         self._prompt_cache: dict[str, str] = {}
 
@@ -91,23 +95,32 @@ class ImageGenerationLogic:
             if not prompt.strip():
                 raise ValidationError("Generated prompt is empty")
             
-            # Note: In a real implementation, this would test LLM service availability
-            # For now, we proceed directly to image generation
-            
             # Prepare generation parameters
             generation_params = self._prepare_generation_parameters()
             
-            # Generate image (placeholder - would integrate with Stable Diffusion)
-            image_path = self._generate_image_with_stable_diffusion(
-                prompt, generation_params, image_id
+            # Generate image using the ACTUAL image service instead of mock
+            # Use the correct API for the image service
+            image_result = self.image_service.generate_embodiment_image(
+                prompt=prompt,
+                parameters=generation_params
+            )
+            
+            # Store the generated image in the database using the image generation service
+            generated_image = self.image_generation_service.store_generated_image(
+                pseudonym_id=pseudonym_id,
+                session_id=session_id,
+                image_path=image_result.image_path,
+                prompt=prompt,
+                generation_parameters=generation_params,
+                pald_source_id=pald_source_id,
             )
             
             processing_time = (datetime.now() - start_time).total_seconds() * 1000
             
             return ImageGenerationResult(
                 success=True,
-                image_id=image_id,
-                image_path=image_path,
+                image_id=generated_image.image_id,
+                image_path=image_result.image_path,
                 prompt_used=prompt,
                 generation_parameters=generation_params,
                 generation_time_ms=max(1, int(processing_time)),  # Ensure at least 1ms
@@ -404,25 +417,32 @@ class ImageGenerationLogic:
         prompt: str,
         parameters: dict[str, Any],
         image_id: UUID,
-    ) -> str:
+    ) -> dict[str, Any]:
         """
-        Generate image using Stable Diffusion (placeholder implementation).
+        Generate image using Stable Diffusion via the image service.
         
-        In a real implementation, this would:
-        1. Load the Stable Diffusion model
-        2. Generate the image from the prompt
-        3. Save the image to the configured path
-        4. Return the image path
+        Args:
+            prompt: Text prompt for image generation
+            parameters: Generation parameters
+            image_id: Unique identifier for the image
+            
+        Returns:
+            dict: Generation result with image path and metadata
         """
-        # Placeholder implementation - would integrate with actual Stable Diffusion
-        image_filename = f"generated_{image_id}.png"
-        image_path = f"generated_images/{image_filename}"
+        # Use the image service to generate the image
+        # Use the correct API for the image service
+        image_result = self.image_service.generate_embodiment_image(
+            prompt=prompt,
+            parameters=parameters
+        )
         
-        # In real implementation, this would call Stable Diffusion API/library
-        logger.info(f"[PLACEHOLDER] Generating image with prompt: {prompt[:100]}...")
-        logger.info(f"[PLACEHOLDER] Image would be saved to: {image_path}")
-        
-        return image_path
+        return {
+            "image_path": image_result.image_path,
+            "generation_time": image_result.generation_time,
+            "model_used": image_result.model_used,
+            "parameters": image_result.parameters,
+            "metadata": image_result.metadata
+        }
 
     def _create_image_description_prompt(
         self,
@@ -506,7 +526,7 @@ Only include attributes that are clearly described in the text.
             response_text = llm_response.text.strip()
             
             # Handle JSON extraction
-            if response_text.startswith("```json"):
+            if response_text.startswith("``json"):
                 response_text = response_text[7:]
             if response_text.endswith("```"):
                 response_text = response_text[:-3]

@@ -690,9 +690,10 @@ class ChatUI:
                 st.session_state.get("enable_pald_processing", True)):
                 
                 self._start_image_generation_pipeline(pseudonym_id, processing_result.pald_data)
-            
-            st.session_state["pald_processing_status"] = "completed"
-            st.rerun()
+            else:
+                # Only set status to completed if we're not doing image generation
+                st.session_state["pald_processing_status"] = "completed"
+                st.rerun()
             
         except Exception as e:
             logger.error(f"Error processing study chat input: {e}")
@@ -861,12 +862,13 @@ class ChatUI:
                 "content": f"Here's your personalized learning assistant!{consistency_info}",
                 "timestamp": time.time(),
                 "message_type": "image_result",
-                "image_path": image_result.image_path,
+                "image_path": image_result.image_path if image_result else session_data.get("current_image"),
                 "consistency_score": consistency_result.consistency_score if consistency_result else None
             }
             
             session_data["messages"].append(final_message)
-            session_data["current_image"] = image_result.image_path
+            session_data["current_image"] = image_result.image_path if image_result else session_data.get("current_image")
+            session_data["current_pald"] = consistency_result.input_pald if consistency_result else session_data.get("current_pald")
             
             # Enable feedback interface
             st.session_state["feedback_active"] = True
@@ -874,6 +876,135 @@ class ChatUI:
             
         except Exception as e:
             logger.error(f"Error presenting final image: {e}")
+            st.session_state["pald_processing_status"] = "error"
+
+    def _regenerate_image_for_consistency(self, pseudonym_id: UUID, input_pald: dict[str, Any], consistency_result) -> None:
+        """Regenerate image to improve consistency."""
+        session_key = f"study_chat_{pseudonym_id}"
+        session_data = st.session_state[session_key]
+        
+        try:
+            # Add processing message
+            processing_message = {
+                "role": "assistant",
+                "content": "🔄 Improving image consistency based on analysis...",
+                "timestamp": time.time(),
+                "message_type": "consistency_processing"
+            }
+            session_data["messages"].append(processing_message)
+            
+            # Generate improved image based on consistency differences
+            with st.spinner("🔄 Improving image consistency..."):
+                image_result = self.image_generation_logic.generate_image_from_pald(
+                    pseudonym_id=pseudonym_id,
+                    session_id=session_data["session_id"],
+                    pald_data=input_pald
+                )
+            
+            if image_result.success:
+                # Describe the new image
+                description_result = self.image_generation_logic.describe_generated_image(
+                    image_result.image_path
+                )
+                
+                # Present the improved image
+                self._present_final_image(pseudonym_id, image_result, consistency_result)
+            else:
+                # Fallback to current image if regeneration fails
+                self._present_final_image(pseudonym_id, None, consistency_result)
+                
+        except Exception as e:
+            logger.error(f"Error regenerating image for consistency: {e}")
+            # Fallback to current image if regeneration fails
+            self._present_final_image(pseudonym_id, None, consistency_result)
+
+    def _regenerate_from_feedback(self, pseudonym_id: UUID, feedback_result) -> None:
+        """Regenerate image based on feedback."""
+        session_key = f"study_chat_{pseudonym_id}"
+        session_data = st.session_state[session_key]
+        
+        try:
+            # Add processing message
+            processing_message = {
+                "role": "assistant",
+                "content": "🎨 Processing your feedback to improve the image...",
+                "timestamp": time.time(),
+                "message_type": "feedback_processing"
+            }
+            session_data["messages"].append(processing_message)
+            
+            # Extract PALD from feedback text
+            feedback_pald_result = self.chat_logic.extract_pald_from_text(feedback_result.feedback_text)
+            
+            # Generate new image based on feedback
+            if feedback_pald_result.success and feedback_pald_result.pald_data:
+                # Use PALD extracted from feedback
+                image_result = self.image_generation_logic.generate_image_from_pald(
+                    pseudonym_id=pseudonym_id,
+                    session_id=session_data["session_id"],
+                    pald_data=feedback_pald_result.pald_data
+                )
+            else:
+                # Fallback to previous PALD with modifications
+                current_pald = session_data.get("current_pald", {})
+                image_result = self.image_generation_logic.generate_image_from_pald(
+                    pseudonym_id=pseudonym_id,
+                    session_id=session_data["session_id"],
+                    pald_data=current_pald
+                )
+            
+            if image_result.success:
+                # Describe the new image
+                description_result = self.image_generation_logic.describe_generated_image(
+                    image_result.image_path
+                )
+                
+                # Update session with new image
+                session_data["current_image"] = image_result.image_path
+                
+                # Create image result message
+                image_message = {
+                    "role": "assistant",
+                    "content": f"✨ Here's the updated image based on your feedback (Round {feedback_result.round_number})!",
+                    "timestamp": time.time(),
+                    "message_type": "image_result",
+                    "image_path": image_result.image_path,
+                    "feedback_round": feedback_result.round_number
+                }
+                session_data["messages"].append(image_message)
+                
+                # Keep feedback interface active for more rounds
+                st.session_state["feedback_active"] = True
+            else:
+                # Error message
+                error_message = {
+                    "role": "assistant",
+                    "content": f"❌ Sorry, I couldn't generate a new image based on your feedback: {image_result.error_message}",
+                    "timestamp": time.time(),
+                    "message_type": "error"
+                }
+                session_data["messages"].append(error_message)
+                
+                # Keep feedback interface active
+                st.session_state["feedback_active"] = True
+                
+        except Exception as e:
+            logger.error(f"Error regenerating from feedback: {e}")
+            # Error message
+            error_message = {
+                "role": "assistant",
+                "content": "❌ Sorry, I encountered an error processing your feedback. Please try again.",
+                "timestamp": time.time(),
+                "message_type": "error",
+                "error": str(e)
+            }
+            session_data["messages"].append(error_message)
+            
+            # Keep feedback interface active
+            st.session_state["feedback_active"] = True
+        
+        st.session_state["pald_processing_status"] = "completed"
+        st.rerun()
 
     def _process_feedback(self, pseudonym_id: UUID, feedback_text: str) -> None:
         """Process user feedback and potentially regenerate image."""
@@ -1288,8 +1419,10 @@ class ChatUI:
                 from src.data.database_factory import get_session_sync
                 st.session_state.db_session = get_session_sync()
             
-            image_service = ImageGenerationService(st.session_state.db_session)
-            self.image_generation_logic = ImageGenerationLogic(image_service)
+            llm_service = get_llm_service()
+            # Use the actual image service that can generate real images
+            image_generation_service = ImageGenerationService(st.session_state.db_session)
+            self.image_generation_logic = ImageGenerationLogic(image_generation_service, llm_service)
         
         if self.chat_service is None:
             if "db_session" not in st.session_state:

@@ -29,20 +29,20 @@ class ImageGenerationUI:
         self.image_service = get_image_service()
 
     def render_image_generation_interface(
-        self, user_id: UUID, embodiment_data: dict[str, Any] | None = None
+        self, pseudonym_id: UUID, embodiment_data: dict[str, Any] | None = None
     ) -> str | None:
         """
         Render the main image generation interface with enhanced accessibility.
 
         Args:
-            user_id: User identifier
+            pseudonym_id: Pseudonym identifier for the participant
             embodiment_data: Embodiment characteristics data
 
         Returns:
             Generated image path if successful, None otherwise
         """
         # Check consent for image generation
-        if not self._check_image_consent(user_id):
+        if not self._check_image_consent(pseudonym_id):
             return None
 
         # Add semantic structure for screen readers
@@ -104,28 +104,33 @@ class ImageGenerationUI:
         # Render the selected generation mode
         result = None
         if generation_mode == "From Embodiment Design":
-            result = self._render_embodiment_generation(user_id, embodiment_data)
+            result = self._render_embodiment_generation(pseudonym_id, embodiment_data)
         elif generation_mode == "Custom Prompt":
-            result = self._render_custom_prompt_generation(user_id)
+            result = self._render_custom_prompt_generation(pseudonym_id)
         else:  # Variations
-            result = self._render_variation_generation(user_id)
+            result = self._render_variation_generation(pseudonym_id)
         
         # Close main content area
         st.markdown('</main>', unsafe_allow_html=True)
         
         return result
 
-    def render_image_gallery(self, user_id: UUID) -> None:
+    def render_image_gallery(self, pseudonym_id: UUID) -> None:
         """
         Render gallery of generated images for the user.
 
         Args:
-            user_id: User identifier
+            pseudonym_id: Pseudonym identifier for the participant
         """
         st.subheader("🖼️ Your Avatar Gallery")
 
+        # Add back button for navigation
+        if st.button("← Back to Chat"):
+            st.session_state.show_image_gallery = False
+            st.rerun()
+
         # Get user's generated images
-        generated_images = self._get_user_images(user_id)
+        generated_images = self._get_user_images(pseudonym_id)
 
         if not generated_images:
             st.info("No images generated yet. Create your first avatar above!")
@@ -152,7 +157,7 @@ class ImageGenerationUI:
 
                     with col2:
                         if st.button("Delete", key=f"delete_{i}"):
-                            self._delete_image(user_id, image_info["id"])
+                            self._delete_image(pseudonym_id, image_info["id"])
                             st.rerun()
 
                     # Show generation details
@@ -164,12 +169,12 @@ class ImageGenerationUI:
                 except Exception as e:
                     st.error(f"Error loading image: {e}")
 
-    def render_image_customization(self, user_id: UUID, base_image_path: str) -> str | None:
+    def render_image_customization(self, pseudonym_id: UUID, base_image_path: str) -> str | None:
         """
         Render image customization interface.
 
         Args:
-            user_id: User identifier
+            pseudonym_id: Pseudonym identifier for the participant
             base_image_path: Path to base image for customization
 
         Returns:
@@ -262,7 +267,7 @@ class ImageGenerationUI:
 
         return None
 
-    def render_batch_generation(self, user_id: UUID, embodiment_data: dict[str, Any]) -> list[str]:
+    def render_batch_generation(self, pseudonym_id: UUID, embodiment_data: dict[str, Any]) -> list[str]:
         """
         Render batch generation interface for multiple variations.
 
@@ -345,10 +350,12 @@ class ImageGenerationUI:
 
         return []
 
-    def _check_image_consent(self, user_id: UUID) -> bool:
+    def _check_image_consent(self, pseudonym_id: UUID) -> bool:
         """Check if user has consent for image generation."""
         try:
-            if not self.consent_service.check_consent(user_id, StudyConsentType.AI_INTERACTION):
+            # For study participants, check the study consent type
+            from src.data.models import StudyConsentType
+            if not self.consent_service.check_consent(pseudonym_id, StudyConsentType.IMAGE_GENERATION):
                 st.error(get_text("error_consent_required"))
                 st.warning("You need to provide consent for image generation to use this feature.")
 
@@ -361,12 +368,12 @@ class ImageGenerationUI:
             return True
 
         except Exception as e:
-            logger.error(f"Error checking image consent for user {user_id}: {e}")
+            logger.error(f"Error checking image consent for pseudonym {pseudonym_id}: {e}")
             st.error("Error checking consent status.")
             return False
 
     def _render_embodiment_generation(
-        self, user_id: UUID, embodiment_data: dict[str, Any] | None
+        self, pseudonym_id: UUID, embodiment_data: dict[str, Any] | None
     ) -> str | None:
         """Render embodiment-based generation interface."""
         if not embodiment_data:
@@ -414,7 +421,7 @@ class ImageGenerationUI:
                 try:
                     # Create embodiment request
                     request = EmbodimentRequest(
-                        user_id=user_id,
+                        user_id=pseudonym_id,
                         pald_data=embodiment_data,
                         parameters={
                             "style": image_style.lower(),
@@ -448,7 +455,7 @@ class ImageGenerationUI:
 
         return None
 
-    def _render_custom_prompt_generation(self, user_id: UUID) -> str | None:
+    def _render_custom_prompt_generation(self, pseudonym_id: UUID) -> str | None:
         """Render custom prompt generation interface."""
         st.subheader("Generate from Custom Prompt")
 
@@ -521,7 +528,7 @@ class ImageGenerationUI:
                     # Generate image
                     result = self.image_service.generate_embodiment_image(
                         prompt=final_prompt,
-                        user_id=user_id,
+                        user_id=pseudonym_id,
                         parameters={
                             "guidance_scale": guidance_scale,
                             "num_inference_steps": num_steps,
@@ -550,12 +557,12 @@ class ImageGenerationUI:
 
         return None
 
-    def _render_variation_generation(self, user_id: UUID) -> str | None:
+    def _render_variation_generation(self, pseudonym_id: UUID) -> str | None:
         """Render variation generation interface."""
         st.subheader("Generate Variations")
 
         # Base image selection
-        user_images = self._get_user_images(user_id)
+        user_images = self._get_user_images(pseudonym_id)
 
         if not user_images:
             st.warning("No existing images found. Generate a base image first.")
@@ -597,7 +604,7 @@ class ImageGenerationUI:
                 try:
                     # Generate variation (this would use img2img functionality)
                     result = self._generate_image_variation(
-                        user_id, base_image_info["path"], variation_prompt
+                        pseudonym_id, base_image_info["path"], variation_prompt
                     )
 
                     if result:
@@ -626,20 +633,39 @@ class ImageGenerationUI:
 
         return None
 
-    def _get_user_images(self, user_id: UUID) -> list[dict[str, Any]]:
+    def _get_user_images(self, pseudonym_id: UUID) -> list[dict[str, Any]]:
         """Get list of user's generated images."""
-        # This would typically query the database for user's images
-        # For now, return mock data
-        return [
-            {
-                "id": "img1",
-                "path": "./generated_images/mock_embodiment_1754900071_1.png",
-                "prompt": "Professional teacher avatar",
-                "created_at": "2024-01-15 10:30",
-                "model": "stable-diffusion-v1-5",
-                "parameters": {"guidance_scale": 7.5},
-            }
-        ]
+        try:
+            # Import the image generation service
+            from src.services.image_generation_service import ImageGenerationService
+            from src.data.database_factory import get_session_sync
+            
+            # Get database session
+            with get_session_sync() as db_session:
+                # Create image generation service
+                image_service = ImageGenerationService(db_session)
+                
+                # Get generated images for the user
+                generated_images = image_service.get_generated_images(pseudonym_id)
+                
+                # Convert to dictionary format for UI
+                image_list = []
+                for image in generated_images:
+                    image_list.append({
+                        "id": str(image.image_id),
+                        "path": image.image_path,
+                        "prompt": image.prompt,
+                        "created_at": image.created_at.strftime("%Y-%m-%d %H:%M:%S") if image.created_at else "Unknown",
+                        "parameters": image.generation_parameters,
+                        "model": image.generation_parameters.get("model", "unknown") if image.generation_parameters else "unknown"
+                    })
+                
+                return image_list
+                
+        except Exception as e:
+            logger.error(f"Error retrieving user images: {e}")
+            # Return empty list if there's an error
+            return []
 
     def _download_image(self, image_info: dict[str, Any]) -> None:
         """Handle image download."""
@@ -654,7 +680,7 @@ class ImageGenerationUI:
         except Exception as e:
             st.error(f"Error downloading image: {e}")
 
-    def _delete_image(self, user_id: UUID, image_id: str) -> None:
+    def _delete_image(self, pseudonym_id: UUID, image_id: str) -> None:
         """Handle image deletion."""
         # This would delete from database and filesystem
         st.success(f"Image {image_id} deleted.")
@@ -675,15 +701,15 @@ class ImageGenerationUI:
 
     def _generate_customized_image(
         self,
-        user_id: UUID,
+        pseudonym_id: UUID,
         base_image_path: str,
         modification_prompt: str,
         parameters: dict[str, Any],
     ) -> str | None:
         """Generate customized image based on base image."""
         # This would use img2img functionality
-        # For now, return mock result
-        return "./generated_images/mock_embodiment_1754900072_1.png"
+        # For now, return None to indicate not implemented
+        return None
 
     def _create_variation_prompts(
         self, embodiment_data: dict[str, Any], variation_types: list[str], count: int
@@ -717,11 +743,11 @@ class ImageGenerationUI:
 
         return prompts
 
-    def _generate_single_variation(self, user_id: UUID, prompt: str) -> str | None:
+    def _generate_single_variation(self, pseudonym_id: UUID, prompt: str) -> str | None:
         """Generate a single variation."""
         try:
             result = self.image_service.generate_embodiment_image(
-                prompt=prompt, user_id=user_id, parameters={}
+                prompt=prompt, user_id=pseudonym_id, parameters={}
             )
             return result.image_path if result else None
         except Exception as e:
@@ -729,12 +755,12 @@ class ImageGenerationUI:
             return None
 
     def _generate_image_variation(
-        self, user_id: UUID, base_image_path: str, variation_prompt: str
+        self, pseudonym_id: UUID, base_image_path: str, variation_prompt: str
     ) -> str | None:
         """Generate image variation from base image."""
         # This would use img2img functionality
-        # For now, return mock result
-        return "./generated_images/mock_embodiment_1754900073_1.png"
+        # For now, return None to indicate not implemented
+        return None
 
 
 # Global image UI instance
@@ -743,25 +769,25 @@ image_ui = ImageGenerationUI()
 
 # Convenience functions
 def render_image_generation_interface(
-    user_id: UUID, embodiment_data: dict[str, Any] | None = None
+    pseudonym_id: UUID, embodiment_data: dict[str, Any] | None = None
 ) -> str | None:
     """Render image generation interface."""
-    return image_ui.render_image_generation_interface(user_id, embodiment_data)
+    return image_ui.render_image_generation_interface(pseudonym_id, embodiment_data)
 
 
-def render_image_gallery(user_id: UUID) -> None:
+def render_image_gallery(pseudonym_id: UUID) -> None:
     """Render image gallery."""
-    image_ui.render_image_gallery(user_id)
+    image_ui.render_image_gallery(pseudonym_id)
 
 
-def render_image_customization(user_id: UUID, base_image_path: str) -> str | None:
+def render_image_customization(pseudonym_id: UUID, base_image_path: str) -> str | None:
     """Render image customization interface."""
-    return image_ui.render_image_customization(user_id, base_image_path)
+    return image_ui.render_image_customization(pseudonym_id, base_image_path)
 
 
-def render_batch_generation(user_id: UUID, embodiment_data: dict[str, Any]) -> list[str]:
+def render_batch_generation(pseudonym_id: UUID, embodiment_data: dict[str, Any]) -> list[str]:
     """Render batch generation interface."""
-    return image_ui.render_batch_generation(user_id, embodiment_data)
+    return image_ui.render_batch_generation(pseudonym_id, embodiment_data)
 
 # === Task 9: Minimal image rendering helpers (append-only) ====================
 from pathlib import Path

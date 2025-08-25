@@ -710,6 +710,7 @@ class StudyConsentType(str, Enum):
     DATA_PROTECTION = "data_protection"
     AI_INTERACTION = "ai_interaction"
     STUDY_PARTICIPATION = "study_participation"
+    IMAGE_GENERATION = "image_generation"
 
 
 class StudyConsentRecord(Base):
